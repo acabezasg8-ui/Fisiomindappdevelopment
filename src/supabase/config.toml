@@ -1,0 +1,15 @@
+# Configuración de Supabase para FisioMind
+# Esta aplicación funciona completamente en modo local sin servidor
+
+[functions]
+# Deshabilitar el despliegue de funciones edge
+enabled = false
+
+[studio]
+enabled = false
+
+[auth]
+enabled = false
+
+[db]
+enabled = false
