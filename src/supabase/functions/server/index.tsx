@@ -2,6 +2,7 @@ import { Hono } from "npm:hono";
 import { cors } from "npm:hono/cors";
 import { logger } from "npm:hono/logger";
 import * as kv from "./kv_store.tsx";
+import { generateCaseFromTemplate, getAllFrameworks, PATHOLOGY_FRAMEWORKS } from "./pathology_templates.tsx";
 const app = new Hono();
 
 // Enable logger
@@ -33,6 +34,8 @@ app.post("/make-server-eba6a2ba/auth/login", async (c) => {
       return c.json({ error: "Email y contraseña son requeridos" }, 400);
     }
 
+    console.log(`Attempting login for: ${email}`);
+
     const { createClient } = await import("jsr:@supabase/supabase-js@2");
     const supabase = createClient(
       Deno.env.get('SUPABASE_URL')!,
@@ -45,21 +48,30 @@ app.post("/make-server-eba6a2ba/auth/login", async (c) => {
     });
 
     if (error || !data.session) {
-      console.error("Login error:", error);
+      console.error(`Login failed for ${email}:`, error?.message);
       
       // Mensaje más claro para el usuario
       if (error?.message?.includes('Invalid login credentials')) {
+        console.log(`User not found or wrong password: ${email}. They may need to sign up first.`);
         return c.json({ 
-          error: "Email o contraseña incorrectos. Si no tienes cuenta, regístrate primero." 
+          error: "Email o contraseña incorrectos. Si no tienes cuenta, haz clic en 'Registrarse' para crear una nueva." 
         }, 401);
       }
       
-      return c.json({ error: "Error al iniciar sesión. Por favor verifica tus credenciales." }, 401);
+      if (error?.message?.includes('Email not confirmed')) {
+        return c.json({ 
+          error: "Por favor confirma tu email antes de iniciar sesión." 
+        }, 401);
+      }
+      
+      return c.json({ 
+        error: error?.message || "Error al iniciar sesión. Por favor verifica tus credenciales." 
+      }, 401);
     }
 
     const userName = data.user.user_metadata?.name || email.split('@')[0];
 
-    console.log(`User logged in: ${email}`);
+    console.log(`✓ User logged in successfully: ${email} (ID: ${data.user.id})`);
     return c.json({ 
       userId: data.user.id,
       userName: userName,
@@ -85,6 +97,8 @@ app.post("/make-server-eba6a2ba/auth/signup", async (c) => {
       return c.json({ error: "La contraseña debe tener al menos 6 caracteres" }, 400);
     }
 
+    console.log(`Attempting signup for: ${email}`);
+
     const { createClient } = await import("jsr:@supabase/supabase-js@2");
     const supabase = createClient(
       Deno.env.get('SUPABASE_URL')!,
@@ -100,21 +114,26 @@ app.post("/make-server-eba6a2ba/auth/signup", async (c) => {
     });
 
     if (error) {
-      console.error("Error creating user:", error);
+      console.error(`Signup failed for ${email}:`, error.message);
       
       // Mensaje más claro para usuario duplicado
-      if (error.message?.includes('already registered') || error.message?.includes('duplicate')) {
-        return c.json({ error: "Este email ya está registrado. Por favor inicia sesión." }, 400);
+      if (error.message?.includes('already registered') || error.message?.includes('duplicate') || error.message?.includes('already been registered')) {
+        console.log(`User already exists: ${email}`);
+        return c.json({ error: "Este email ya está registrado. Por favor usa 'Iniciar Sesión' en su lugar." }, 400);
       }
       
       return c.json({ error: error.message || "Error al crear el usuario" }, 400);
     }
 
     if (!data.user) {
+      console.error("User creation returned no user data");
       return c.json({ error: "No se pudo crear el usuario" }, 500);
     }
 
+    console.log(`✓ User created successfully: ${email} (ID: ${data.user.id})`);
+
     // Iniciar sesión automáticamente después del registro usando ANON_KEY (no SERVICE_ROLE_KEY)
+    console.log(`Attempting auto-login for: ${email}`);
     const supabaseAnon = createClient(
       Deno.env.get('SUPABASE_URL')!,
       Deno.env.get('SUPABASE_ANON_KEY')!,
@@ -127,7 +146,8 @@ app.post("/make-server-eba6a2ba/auth/signup", async (c) => {
 
     if (sessionError || !sessionData.session) {
       // Usuario creado pero no se pudo iniciar sesión automáticamente
-      console.log("User created but auto-login failed. User can login manually.", sessionError);
+      console.error(`Auto-login failed for ${email}:`, sessionError?.message);
+      console.log(`User can login manually with email: ${email}`);
       return c.json({ 
         userId: data.user.id,
         userName: name,
@@ -135,7 +155,7 @@ app.post("/make-server-eba6a2ba/auth/signup", async (c) => {
       });
     }
 
-    console.log(`User created and logged in: ${email}`);
+    console.log(`✓ User auto-logged in successfully: ${email}`);
     return c.json({ 
       userId: data.user.id,
       userName: name,
@@ -180,95 +200,86 @@ app.get("/make-server-eba6a2ba/cases/get", async (c) => {
   try {
     const userId = c.req.query("userId");
     
+    console.log(`Fetching cases for user: ${userId}`);
+    
     if (!userId) {
+      console.error("Missing userId parameter");
       return c.json({ error: "Missing userId" }, 400);
     }
 
     const cases = await kv.get(`cases:${userId}`) || [];
     
-    console.log(`Retrieved ${cases.length} cases for user ${userId}`);
+    console.log(`✓ Retrieved ${cases.length} cases for user ${userId}`);
     
     return c.json({ cases });
   } catch (error) {
-    console.error("Error fetching cases:", error);
+    console.error("Error fetching cases:", error.message, error.stack);
     return c.json({ error: `Error fetching cases: ${error.message}` }, 500);
   }
 });
 
-// Generar nuevo caso clínico
+// Obtener lista de marcos fisiopatológicos disponibles
+app.get("/make-server-eba6a2ba/cases/frameworks", (c) => {
+  try {
+    console.log("Fetching available pathology frameworks...");
+    const frameworks = getAllFrameworks();
+    console.log(`✓ Retrieved ${frameworks.length} frameworks`);
+    return c.json({ frameworks });
+  } catch (error) {
+    console.error("Error fetching frameworks:", error.message);
+    return c.json({ error: `Error fetching frameworks: ${error.message}` }, 500);
+  }
+});
+
+// Generar nuevo caso clínico usando marcos fisiopatológicos
 app.post("/make-server-eba6a2ba/cases/generate", async (c) => {
   try {
-    const cases = [
-      {
-        patientName: 'María González',
-        age: 35,
-        gender: 'Femenino',
-        chiefComplaint: 'Dolor cervical de 2 semanas de evolución',
-        pathology: 'Cervicalgia mecánica por tensión muscular',
-      },
-      {
-        patientName: 'Carlos Ruiz',
-        age: 52,
-        gender: 'Masculino',
-        chiefComplaint: 'Dolor lumbar crónico que aumenta al estar sentado',
-        pathology: 'Lumbalgia crónica inespecífica',
-      },
-      {
-        patientName: 'Laura Martínez',
-        age: 28,
-        gender: 'Femenino',
-        chiefComplaint: 'Dolor en el hombro derecho al levantar el brazo',
-        pathology: 'Tendinopatía del supraespinoso',
-      },
-      {
-        patientName: 'Antonio Pérez',
-        age: 45,
-        gender: 'Masculino',
-        chiefComplaint: 'Dolor en la rodilla derecha al subir escaleras',
-        pathology: 'Síndrome patelofemoral',
-      },
-      {
-        patientName: 'Isabel Sánchez',
-        age: 60,
-        gender: 'Femenino',
-        chiefComplaint: 'Dolor y rigidez en ambas manos por las mañanas',
-        pathology: 'Artrosis de manos',
-      },
-      {
-        patientName: 'Javier López',
-        age: 38,
-        gender: 'Masculino',
-        chiefComplaint: 'Dolor en la planta del pie al levantarse',
-        pathology: 'Fascitis plantar',
-      },
-      {
-        patientName: 'Carmen Díaz',
-        age: 42,
-        gender: 'Femenino',
-        chiefComplaint: 'Dolor de espalda tras levantar peso',
-        pathology: 'Contractura muscular paravertebral',
-      },
-      {
-        patientName: 'Miguel Fernández',
-        age: 29,
-        gender: 'Masculino',
-        chiefComplaint: 'Dolor en el codo al jugar al tenis',
-        pathology: 'Epicondilitis lateral (codo de tenista)',
-      },
-    ];
+    console.log("Generating new case from pathology frameworks...");
+    
+    // Seleccionar un marco fisiopatológico aleatorio
+    const frameworkKeys = Object.keys(PATHOLOGY_FRAMEWORKS);
+    const randomFrameworkKey = frameworkKeys[Math.floor(Math.random() * frameworkKeys.length)];
+    
+    console.log(`Selected framework: ${PATHOLOGY_FRAMEWORKS[randomFrameworkKey].name}`);
+    
+    // Generar caso desde el template
+    const newCase = generateCaseFromTemplate(randomFrameworkKey);
+    
+    if (!newCase) {
+      throw new Error("Failed to generate case from template");
+    }
 
-    const randomCase = cases[Math.floor(Math.random() * cases.length)];
-    const newCase = {
-      ...randomCase,
-      id: Date.now().toString(),
-      date: new Date().toLocaleDateString('es-ES'),
-    };
-
-    console.log(`Generated new case: ${newCase.patientName}`);
+    console.log(`✓ Generated new case: ${newCase.patientName} - ${newCase.pathology}`);
     
     return c.json({ case: newCase });
   } catch (error) {
-    console.error("Error generating case:", error);
+    console.error("Error generating case:", error.message, error.stack);
+    return c.json({ error: `Error generating case: ${error.message}` }, 500);
+  }
+});
+
+// Generar caso específico de un marco fisiopatológico
+app.post("/make-server-eba6a2ba/cases/generate-specific", async (c) => {
+  try {
+    const { frameworkKey } = await c.req.json();
+    
+    if (!frameworkKey) {
+      return c.json({ error: "frameworkKey is required" }, 400);
+    }
+    
+    console.log(`Generating case from specific framework: ${frameworkKey}`);
+    
+    const newCase = generateCaseFromTemplate(frameworkKey);
+    
+    if (!newCase) {
+      return c.json({ error: `Framework ${frameworkKey} not found` }, 404);
+    }
+
+    console.log(`✓ Generated case from ${frameworkKey}: ${newCase.patientName} - ${newCase.pathology}`);
+    
+    return c.json({ case: newCase });
+  } catch (error) {
+    console.error("Error generating specific case:", error.message, error.stack);
     return c.json({ error: `Error generating case: ${error.message}` }, 500);
   }
 });
@@ -289,6 +300,22 @@ app.post("/make-server-eba6a2ba/ai/response", async (c) => {
     
     if (openaiKey) {
       try {
+        // Preparar información clínica detallada si está disponible
+        const clinicalDetailsText = caseData.clinicalDetails ? `
+
+INFORMACIÓN CLÍNICA DETALLADA (USO INTERNO - NO REVELAR DIRECTAMENTE):
+- Tipo de inicio: ${caseData.clinicalDetails.onsetType}
+- Cronología: ${caseData.clinicalDetails.chronologyWeeks} semanas
+- Factores agravantes: ${caseData.clinicalDetails.aggravatingFactors.join(', ')}
+- Factores aliviantes: ${caseData.clinicalDetails.relievingFactors.join(', ')}
+- Ocupación: ${caseData.occupation}
+
+HALLAZGOS DE EXPLORACIÓN FÍSICA (responder según corresponda):
+- Palpación: ${caseData.clinicalDetails.physicalFindings.palpation}
+- Rango de movimiento: ${caseData.clinicalDetails.physicalFindings.rom}
+- Fuerza muscular: ${caseData.clinicalDetails.physicalFindings.strength}
+- Tests especiales: ${caseData.clinicalDetails.physicalFindings.specialTests}` : '';
+
         // Prompt diferente para modo examen (tutor) vs simulación (paciente)
         const systemPrompt = isExamMode ? 
         `Eres un TUTOR EXPERTO de fisioterapia ayudando a un estudiante a resolver un caso clínico de examen.
@@ -296,7 +323,10 @@ app.post("/make-server-eba6a2ba/ai/response", async (c) => {
 TU ROL: Guiar al estudiante hacia la solución correcta mediante el método socrático, sin dar respuestas directas.
 
 CASO CLÍNICO:
-${caseData.chiefComplaint}
+- Paciente: ${caseData.age} años, ${caseData.gender}
+- Ocupación: ${caseData.occupation || 'no especificada'}
+- Motivo de consulta: ${caseData.chiefComplaint}
+${clinicalDetailsText}
 
 ESTRATEGIA PEDAGÓGICA:
 1. Cuando te pregunten → Responde con otra pregunta que les haga pensar
@@ -330,8 +360,10 @@ Mantén respuestas de 2-4 frases, claras y motivadoras.`
    - Nombre: ${caseData.patientName}
    - Edad: ${caseData.age}
    - Género: ${caseData.gender}
+   - Ocupación: ${caseData.occupation || 'no especificada'}
    - Motivo de consulta: ${caseData.chiefComplaint}
    - Patología real: ${caseData.pathology}
+${clinicalDetailsText}
 
 2. ROL DE TUTOR: Guía sutilmente al estudiante hacia un razonamiento clínico correcto mediante:
    - Proporcionar información relevante cuando hagan preguntas adecuadas
@@ -343,7 +375,7 @@ REGLAS IMPORTANTES:
 - Responde SIEMPRE de forma coherente a la pregunta específica del estudiante
 - Si preguntan sobre dolor: describe localización, tipo, intensidad (EVA), factores que lo agravan/alivian
 - Si preguntan sobre inicio: da cronología clara y posible causa desencadenante
-- Si preguntan sobre actividades/trabajo: relaciona con la patología
+- Si preguntan sobre actividades/trabajo: relaciona con la patología y ocupación
 - Si hacen exploración física: responde según hallazgos esperados de la patología
 - Si el estudiante va por buen camino, refuerza positivamente
 - Si olvidan preguntar algo crucial, dale pistas sutiles: "Doctor, ¿no quiere saber sobre...?"
@@ -753,6 +785,8 @@ Sé EXIGENTE pero CONSTRUCTIVO. El feedback debe explicar QUÉ hizo bien, QUÉ o
 // Generar caso clínico en formato examen
 app.post("/make-server-eba6a2ba/exam/generate", async (c) => {
   try {
+    console.log("Generating exam case...");
+    
     const openaiKey = Deno.env.get("OPENAI_API_KEY");
     
     if (openaiKey) {
@@ -887,11 +921,11 @@ OBJETIVO: Diagnóstico diferencial entre contractura muscular aguda vs. otras ca
       date: new Date().toLocaleDateString('es-ES'),
     };
 
-    console.log(`Local exam case generated`);
+    console.log(`✓ Local exam case generated`);
     return c.json({ examCase });
     
   } catch (error) {
-    console.error("Error generating exam case:", error);
+    console.error("Error generating exam case:", error.message, error.stack);
     return c.json({ error: `Error generating exam case: ${error.message}` }, 500);
   }
 });
@@ -1188,17 +1222,20 @@ app.get("/make-server-eba6a2ba/exam/get", async (c) => {
   try {
     const userId = c.req.query("userId");
     
+    console.log(`Fetching exam cases for user: ${userId}`);
+    
     if (!userId) {
+      console.error("Missing userId parameter");
       return c.json({ error: "Missing userId" }, 400);
     }
 
     const examCases = await kv.get(`exam-cases:${userId}`) || [];
     
-    console.log(`Retrieved ${examCases.length} exam cases for user ${userId}`);
+    console.log(`✓ Retrieved ${examCases.length} exam cases for user ${userId}`);
     
     return c.json({ examCases });
   } catch (error) {
-    console.error("Error fetching exam cases:", error);
+    console.error("Error fetching exam cases:", error.message, error.stack);
     return c.json({ error: `Error fetching exam cases: ${error.message}` }, 500);
   }
 });

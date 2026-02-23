@@ -36,6 +36,7 @@ export function AuthScreen({ onAuthSuccess }: AuthScreenProps) {
     setIsLoading(true);
     
     try {
+      console.log(`Attempting login with email: ${loginEmail}`);
       const result = await login(loginEmail, loginPassword);
       
       if (!result) {
@@ -43,6 +44,7 @@ export function AuthScreen({ onAuthSuccess }: AuthScreenProps) {
         return;
       }
       
+      console.log(`Login successful for: ${loginEmail}`);
       toast.success(`¡Bienvenido de nuevo, ${result.userName}!`);
       onAuthSuccess(result.userId, result.userName);
     } catch (error: any) {
@@ -52,10 +54,10 @@ export function AuthScreen({ onAuthSuccess }: AuthScreenProps) {
       toast.error(errorMessage);
       
       // Si el error es de credenciales inválidas, sugerir registro
-      if (errorMessage.includes('incorrectos') || errorMessage.includes('Invalid')) {
+      if (errorMessage.includes('incorrectos') || errorMessage.includes('Invalid') || errorMessage.includes('primera vez') || errorMessage.includes('no tienes cuenta') || errorMessage.includes('Registrarse')) {
         setTimeout(() => {
-          toast.info('💡 Si es tu primera vez, haz clic en "Registrarse"', { duration: 5000 });
-        }, 2000);
+          toast.info('💡 ¿No tienes cuenta? Haz clic en "Registrarse" arriba para crear tu cuenta de FisioMind', { duration: 7000 });
+        }, 2500);
       }
     } finally {
       setIsLoading(false);
@@ -83,13 +85,25 @@ export function AuthScreen({ onAuthSuccess }: AuthScreenProps) {
     setIsLoading(true);
 
     try {
+      console.log(`Attempting signup with email: ${signupEmail}`);
       const result = await signup(signupEmail, signupPassword, signupName);
       
+      console.log(`Signup successful for: ${signupEmail}`);
       toast.success(`¡Cuenta creada exitosamente! Bienvenido, ${result.userName}`);
       onAuthSuccess(result.userId, result.userName);
     } catch (error: any) {
       console.error('Error during signup:', error);
-      toast.error(error.message || 'Error al crear la cuenta. Por favor intenta de nuevo.');
+      const errorMessage = error.message || 'Error al crear la cuenta. Por favor intenta de nuevo.';
+      toast.error(errorMessage);
+      
+      // Si el email ya existe, sugerir login
+      if (errorMessage.includes('ya está registrado') || errorMessage.includes('already')) {
+        setTimeout(() => {
+          toast.info('Este email ya existe. Usa "Iniciar Sesión" en su lugar', { duration: 5000 });
+          setMode('login');
+          setLoginEmail(signupEmail);
+        }, 2000);
+      }
     } finally {
       setIsLoading(false);
     }

@@ -31,6 +31,21 @@ const SERVER_URL = `https://${projectId}.supabase.co/functions/v1/make-server-eb
 
 // Helper para obtener headers con autenticación
 const getHeaders = () => {
+  return {
+    'Content-Type': 'application/json',
+  };
+};
+
+// Helper para obtener headers con publicAnonKey (para endpoints que necesitan auth básica)
+const getAnonHeaders = () => {
+  return {
+    'Content-Type': 'application/json',
+    'Authorization': `Bearer ${publicAnonKey}`,
+  };
+};
+
+// Helper para obtener headers con access token del usuario (para endpoints protegidos)
+const getAuthHeaders = () => {
   const accessToken = localStorage.getItem('fisiomind_access_token');
   return {
     'Content-Type': 'application/json',
@@ -141,7 +156,7 @@ export const saveCompletedCase = async (caseData: CaseData): Promise<void> => {
 
     const response = await fetch(`${SERVER_URL}/cases/save`, {
       method: 'POST',
-      headers: getHeaders(),
+      headers: getAnonHeaders(),
       body: JSON.stringify({ userId, caseData }),
     });
 
@@ -162,19 +177,25 @@ export const getCompletedCases = async (): Promise<CaseData[]> => {
   try {
     const userId = getUserId();
     if (!userId) {
+      console.log('No userId found, skipping fetch');
       return [];
     }
 
+    console.log(`Fetching cases for userId: ${userId}`);
+    
     const response = await fetch(`${SERVER_URL}/cases/get?userId=${userId}`, {
       method: 'GET',
-      headers: getHeaders(),
+      headers: getAnonHeaders(),
     });
 
     if (!response.ok) {
-      throw new Error('Error fetching cases');
+      const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
+      console.error('Server error fetching cases:', errorData);
+      throw new Error(errorData.error || 'Error fetching cases');
     }
 
     const data = await response.json();
+    console.log(`✓ Fetched ${data.cases?.length || 0} cases`);
     return data.cases || [];
   } catch (error) {
     console.error('Error fetching cases:', error);
@@ -185,16 +206,21 @@ export const getCompletedCases = async (): Promise<CaseData[]> => {
 // Generar un nuevo caso clínico
 export const generateNewCase = async (): Promise<CaseData> => {
   try {
+    console.log('Generating new case...');
+    
     const response = await fetch(`${SERVER_URL}/cases/generate`, {
       method: 'POST',
-      headers: getHeaders(),
+      headers: getAnonHeaders(),
     });
 
     if (!response.ok) {
-      throw new Error('Error generating case');
+      const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
+      console.error('Server error generating case:', errorData);
+      throw new Error(errorData.error || 'Error generating case');
     }
 
     const data = await response.json();
+    console.log(`✓ Case generated: ${data.case?.patientName}`);
     return data.case;
   } catch (error) {
     console.error('Error generating case:', error);
@@ -212,7 +238,7 @@ export const generateAIResponse = async (
   try {
     const response = await fetch(`${SERVER_URL}/ai/response`, {
       method: 'POST',
-      headers: getHeaders(),
+      headers: getAnonHeaders(),
       body: JSON.stringify({ 
         message, 
         caseData, 
@@ -242,7 +268,7 @@ export const generateAIEvaluation = async (
   try {
     const response = await fetch(`${SERVER_URL}/ai/evaluation`, {
       method: 'POST',
-      headers: getHeaders(),
+      headers: getAnonHeaders(),
       body: JSON.stringify({ caseData, chatHistory, notes }),
     });
 
@@ -261,16 +287,21 @@ export const generateAIEvaluation = async (
 // Generar caso de examen
 export const generateExamCase = async (): Promise<any> => {
   try {
+    console.log('Generating exam case...');
+    
     const response = await fetch(`${SERVER_URL}/exam/generate`, {
       method: 'POST',
-      headers: getHeaders(),
+      headers: getAnonHeaders(),
     });
 
     if (!response.ok) {
-      throw new Error('Error generating exam case');
+      const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
+      console.error('Server error generating exam case:', errorData);
+      throw new Error(errorData.error || 'Error generating exam case');
     }
 
     const data = await response.json();
+    console.log(`✓ Exam case generated`);
     return data.examCase;
   } catch (error) {
     console.error('Error generating exam case:', error);
@@ -288,7 +319,7 @@ export const saveCompletedExamCase = async (examCaseData: any): Promise<void> =>
 
     const response = await fetch(`${SERVER_URL}/exam/save`, {
       method: 'POST',
-      headers: getHeaders(),
+      headers: getAnonHeaders(),
       body: JSON.stringify({ userId, examCaseData }),
     });
 
@@ -309,19 +340,25 @@ export const getCompletedExamCases = async (): Promise<any[]> => {
   try {
     const userId = getUserId();
     if (!userId) {
+      console.log('No userId found, skipping fetch');
       return [];
     }
 
+    console.log(`Fetching exam cases for userId: ${userId}`);
+    
     const response = await fetch(`${SERVER_URL}/exam/get?userId=${userId}`, {
       method: 'GET',
-      headers: getHeaders(),
+      headers: getAnonHeaders(),
     });
 
     if (!response.ok) {
-      throw new Error('Error fetching exam cases');
+      const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
+      console.error('Server error fetching exam cases:', errorData);
+      throw new Error(errorData.error || 'Error fetching exam cases');
     }
 
     const data = await response.json();
+    console.log(`✓ Fetched ${data.examCases?.length || 0} exam cases`);
     return data.examCases || [];
   } catch (error) {
     console.error('Error fetching exam cases:', error);
@@ -338,7 +375,7 @@ export const explainStudyContent = async (
   try {
     const response = await fetch(`${SERVER_URL}/study/explain`, {
       method: 'POST',
-      headers: getHeaders(),
+      headers: getAnonHeaders(),
       body: JSON.stringify({ content, question, chatHistory }),
     });
 
@@ -359,7 +396,7 @@ export const generateStudyQuiz = async (content: string): Promise<any> => {
   try {
     const response = await fetch(`${SERVER_URL}/study/quiz`, {
       method: 'POST',
-      headers: getHeaders(),
+      headers: getAnonHeaders(),
       body: JSON.stringify({ content }),
     });
 
@@ -380,7 +417,7 @@ export const checkAIConfiguration = async (): Promise<boolean> => {
   try {
     const response = await fetch(`${SERVER_URL}/ai/check`, {
       method: 'GET',
-      headers: getHeaders(),
+      headers: getAnonHeaders(),
     });
 
     if (!response.ok) {

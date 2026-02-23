@@ -100,11 +100,11 @@ export function FisioStudyScreen({ onBackToHome }: FisioStudyScreenProps) {
       const fileId = `${Date.now()}-${i}`;
 
       try {
-        // Verificar tamaño (máximo 10MB)
-        if (file.size > 10 * 1024 * 1024) {
-          toast.error(`${file.name} es demasiado grande (máximo 10MB)`);
-          continue;
-        }
+        // Sin límite de tamaño - los estudiantes pueden subir todo el contenido que necesiten
+        // if (file.size > 10 * 1024 * 1024) {
+        //   toast.error(`${file.name} es demasiado grande (máximo 10MB)`);
+        //   continue;
+        // }
 
         if (file.type === 'application/pdf') {
           // Procesar PDF
@@ -416,7 +416,7 @@ export function FisioStudyScreen({ onBackToHome }: FisioStudyScreenProps) {
                         </button>
                       </p>
                       <p className="text-sm text-[#6e6e73] mt-1">
-                        Soporta: PDF, TXT, imágenes (JPG, PNG) • Máx. 10MB
+                        Soporta: PDF, TXT, imágenes (JPG, PNG) • Sin límite de tamaño
                       </p>
                       <p className="text-xs text-[#ff9500] mt-2 bg-[#ff9500]/10 rounded-lg p-2">
                         ⚠️ PDFs escaneados (imágenes): Copia y pega el texto manualmente
