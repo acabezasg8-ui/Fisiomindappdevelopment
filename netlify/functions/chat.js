@@ -18,7 +18,7 @@ export const handler = async (event) => {
     const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
     const resp = await client.responses.create({
-      model: "gpt-5",
+      model: "gpt-4o-mini",
       instructions:
         "Eres un asistente de fisioterapia para estudiantes. Responde claro y seguro. Si faltan datos, pregunta. No inventes.",
       input: message,
