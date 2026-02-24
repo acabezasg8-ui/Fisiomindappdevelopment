@@ -5,7 +5,6 @@ import { Button } from './ui/button';
 import { Textarea } from './ui/textarea';
 import { CaseData } from '../App';
 import { Badge } from './ui/badge';
-import { generateAIResponse } from '../utils/supabase/client';
 import { toast } from 'sonner@2.0.3';
 
 type CaseSimulationProps = {
@@ -47,9 +46,26 @@ export function CaseSimulation({
       setIsTyping(true);
 
       try {
-        await new Promise(resolve => setTimeout(resolve, 500));
-        const aiResponse = await generateAIResponse(userMessage, caseData, newHistory, false);
-        onChatUpdate([...newHistory, { role: 'patient' as const, message: aiResponse }]);
+        await new Promise((resolve) => setTimeout(resolve, 300));
+
+const res = await fetch("/.netlify/functions/chat", {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({
+    message: userMessage,
+    caseData,
+    chatHistory: newHistory,
+    mode: "patient",
+  }),
+});
+
+if (!res.ok) {
+  const txt = await res.text();
+  throw new Error(txt);
+}
+
+const data = await res.json();
+onChatUpdate([...newHistory, { role: "patient" as const, message: data.reply }]);
       } catch (error) {
         console.error('Error getting AI response:', error);
         toast.error('Error al obtener respuesta del paciente');
