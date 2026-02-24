@@ -1,5 +1,34 @@
 import OpenAI from "openai";
 
+// Ajustes simples para estabilidad/coste
+const MAX_HISTORY_MESSAGES = 12; // recorta historial (últimos N mensajes)
+const MODEL = "gpt-4o-mini";
+
+function json(statusCode, payload) {
+  return {
+    statusCode,
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  };
+}
+
+function normalizeHistory(history) {
+  // Esperamos [{role:"user"|"assistant", content:"..."}]
+  if (!Array.isArray(history)) return [];
+  const cleaned = history
+    .filter(
+      (m) =>
+        m &&
+        (m.role === "user" || m.role === "assistant") &&
+        typeof m.content === "string" &&
+        m.content.trim().length > 0
+    )
+    .map((m) => ({ role: m.role, content: m.content.trim() }));
+
+  // Recorte al final (más reciente)
+  return cleaned.slice(-MAX_HISTORY_MESSAGES);
+}
+
 export const handler = async (event) => {
   try {
     if (event.httpMethod !== "POST") {
@@ -7,100 +36,95 @@ export const handler = async (event) => {
     }
 
     if (!process.env.OPENAI_API_KEY) {
-      return {
-        statusCode: 500,
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ error: "OPENAI_API_KEY missing" }),
-      };
+      return json(500, { error: "OPENAI_API_KEY missing" });
     }
 
     const body = JSON.parse(event.body || "{}");
     const { mode, action, message, history = [] } = body;
 
     if (!mode || typeof mode !== "string") {
-      return {
-        statusCode: 400,
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ error: "Falta 'mode' (string)" }),
-      };
+      return json(400, { error: "Falta 'mode' (string)" });
     }
-
     if (!action || typeof action !== "string") {
-      return {
-        statusCode: 400,
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ error: "Falta 'action' (string)" }),
-      };
+      return json(400, { error: "Falta 'action' (string)" });
     }
-
     if (!message || typeof message !== "string") {
-      return {
-        statusCode: 400,
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ error: "Falta 'message' (string)" }),
-      };
-    }
-
-    // history opcional pero si viene, validamos forma mínima
-    if (!Array.isArray(history)) {
-      return {
-        statusCode: 400,
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ error: "'history' debe ser un array" }),
-      };
+      return json(400, { error: "Falta 'message' (string)" });
     }
 
     const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
-    // 🔵 CONFIG BASE
+    // --------------------------
+    // PROMPTS AFINADOS POR MODO
+    // --------------------------
     let systemPrompt = "";
-    let temperature = 0.3;
+    let temperature = 0.25;
     let max_output_tokens = 600;
 
-    // =========================
-    // 🔷 SWITCH POR MODO
-    // =========================
     switch (mode) {
-      // -------------------------
-      // 1️⃣ CASOS CLÍNICOS LIBRES
-      // -------------------------
       case "casos_libres": {
         if (action === "paciente") {
           systemPrompt = `
-Eres un paciente real en consulta de fisioterapia.
+Eres un PACIENTE real en una consulta de fisioterapia. Estás respondiendo a un estudiante.
 
-REGLAS:
-- Habla como una persona normal (sin lenguaje técnico).
-- No sugieras diagnósticos ni nombres de patologías.
-- No propongas pruebas clínicas ni tratamientos.
-- Responde SOLO a lo que te preguntan (no des información extra).
-- Si no sabes algo o no te acuerdas, dilo.
-- Mantén coherencia con tu historia clínica durante toda la conversación.
+OBJETIVO
+- Responder de forma realista, coherente y humana a preguntas clínicas.
+- NO enseñar, NO diagnosticar, NO sugerir pruebas ni tratamiento.
+
+PERSONA Y TONO
+- Habla como paciente (lenguaje cotidiano, sin tecnicismos).
+- Respuestas breves (1–4 frases), salvo que te pidan detalles concretos.
+- Si te preguntan por escalas (0–10), da un número y explica en una frase.
+
+REGLAS DURAS (OBLIGATORIAS)
+- No digas diagnósticos ni nombres de patologías.
+- No propongas pruebas clínicas, maniobras, ni ejercicios.
+- No reveles “lo que el alumno debería preguntar”.
+- No añadas información no solicitada. Si no te preguntan, no lo cuentes.
+- Si no sabes/no recuerdas: di “no estoy seguro/a” o “no me acuerdo”.
+
+COHERENCIA
+- Mantén el mismo relato (cronología, localización, irradiación, factores) durante toda la conversación.
+- Si el estudiante pregunta lo mismo, responde coherente (puedes variar mínimamente el texto, no el contenido).
+
+SEGURIDAD
+- Si te preguntan por síntomas graves (pérdida de fuerza súbita, fiebre, pérdida de control de esfínteres, etc.), responde con sinceridad acorde a tu historia (si existen, dilo; si no, dilo).
+
+SALIDA
+- Responde SOLO como paciente. No uses listas a menos que el alumno pida “enumera”.
 `;
           temperature = 0.2;
-          max_output_tokens = 400;
+          max_output_tokens = 350;
           break;
         }
 
         if (action === "evaluar") {
           systemPrompt = `
-Eres un docente universitario experto en fisioterapia clínica y evaluación por competencias.
-Vas a evaluar el desempeño del alumno según 5 competencias:
+Eres un DOCENTE EVALUADOR universitario experto en fisioterapia clínica.
+Tu tarea es evaluar el desempeño del alumno en este caso clínico.
 
-1) Anamnesis
-2) Exploración
-3) Razonamiento clínico
-4) Tratamiento
-5) Comunicación
+COMPETENCIAS A EVALUAR (0–100)
+- anamnesis
+- exploracion
+- razonamiento_clinico
+- tratamiento
+- comunicacion
 
-REGLAS:
-- Devuelve EXCLUSIVAMENTE un JSON válido (sin texto extra, sin markdown).
-- Puntuaciones de 0 a 100 (enteros).
-- Feedback breve (1-2 frases) por competencia, específico y accionable.
-- Si falta información para puntuar una competencia, NO inventes: asigna puntuación conservadora y explica qué faltó.
-- Mantén criterio consistente entre casos.
+CRITERIOS (resumen)
+1) Anamnesis: cronología, dolor (localización/irradiación), mecanismo, banderas rojas, función, antecedentes, medicación, objetivos del paciente.
+2) Exploración: propone/integra pruebas razonables, justifica qué busca, interpreta hallazgos y los relaciona con hipótesis.
+3) Razonamiento clínico: hipótesis principal + diferenciales, coherencia con datos, descarta red flags, explica fisiopatología/biomecánica.
+4) Tratamiento: plan inicial seguro y específico (educación, carga, dosificación, criterios de progresión, reevaluación).
+5) Comunicación: claridad, empatía, lenguaje al paciente, estructura, consentimiento, educación y expectativas.
 
-FORMATO JSON EXACTO (respeta ids):
+REGLAS DURAS
+- Devuelve EXCLUSIVAMENTE JSON válido. Sin texto adicional. Sin markdown.
+- Scores enteros 0–100.
+- Feedback por competencia: 1–2 frases, accionable y específico.
+- Si falta información para puntuar una competencia: NO inventes. Puntúa conservador y explica lo que faltó.
+- No cites papers/guías específicas. Habla en términos generales.
+
+FORMATO JSON EXACTO
 {
   "competencias": [
     { "id": "anamnesis", "score": 0, "feedback": "..." },
@@ -111,93 +135,117 @@ FORMATO JSON EXACTO (respeta ids):
   ],
   "global": { "score": 0, "resumen": "..." }
 }
+
+IMPORTANTE
+- El resumen global (1–3 frases) debe decir: mayor fortaleza + mayor debilidad + 1 recomendación.
 `;
           temperature = 0.2;
-          max_output_tokens = 500;
+          max_output_tokens = 550;
           break;
         }
 
-        return {
-          statusCode: 400,
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            error: "Action inválida para casos_libres. Usa 'paciente' o 'evaluar'.",
-          }),
-        };
+        return json(400, {
+          error: "Action inválida para casos_libres. Usa 'paciente' o 'evaluar'.",
+        });
       }
 
-      // -------------------------
-      // 2️⃣ MODO EXAMEN
-      // -------------------------
       case "examen": {
+        // Puedes dividir luego en action=generar/corregir, pero para MVP vale.
         systemPrompt = `
-Eres examinador de fisioterapia.
-Genera o corrige casos clínicos tipo examen.
+Eres EXAMINADOR de fisioterapia. Generas o corriges casos tipo examen.
 
-REGLAS:
-- Responde estructurado, claro y sin divagar.
-- Si te piden generar: crea un caso realista, con datos clínicos coherentes y pregunta final.
-- Si te piden corregir: evalúa con criterios claros y sugiere mejoras.
-- No inventes referencias científicas específicas.
+REGLAS GENERALES
+- No inventes estudios/citas, guías, porcentajes o referencias.
+- Mantén coherencia clínica (síntomas, hallazgos, curso temporal).
+- Lenguaje claro y evaluable.
+
+SI TE PIDEN GENERAR (formato obligatorio)
+1) Enunciado del caso (150–250 palabras)
+2) Datos clave (5–8 bullets)
+3) Preguntas del examen (3–5)
+4) Criterios de corrección (rúbrica breve por pregunta)
+
+SI TE PIDEN CORREGIR
+- Evalúa por apartados: aciertos, errores, qué faltó, y mejora concreta.
+- Sé preciso, no divagues.
+
+SEGURIDAD
+- Incluye red flags solo si son parte del caso; si aparecen, deben afectar la corrección.
 `;
-        temperature = 0.3;
+        temperature = 0.35;
+        max_output_tokens = 850;
+        break;
+      }
+
+      case "estudio": {
+        systemPrompt = `
+Eres un TUTOR ACADÉMICO de fisioterapia. El alumno puede aportar apuntes/fragmentos.
+
+REGLAS DURAS
+- Si la información NO está en el contexto aportado, dilo explícitamente:
+  "No aparece en tus documentos. Puedo explicarlo en general, pero no puedo atribuirlo a tus apuntes."
+- No inventes citas, páginas, autores, porcentajes.
+- Explica con rigor fisiopatológico y ejemplos clínicos simples.
+- Responde estructurado y claro.
+
+FORMATO RECOMENDADO
+- Resumen (si aplica)
+- Explicación paso a paso
+- Ejemplo clínico breve
+- Mini-checklist / puntos clave
+
+CUANDO HAYA AMBIGÜEDAD
+- Haz 1–2 preguntas de aclaración antes de extenderte.
+`;
+        temperature = 0.2;
         max_output_tokens = 700;
         break;
       }
 
-      // -------------------------
-      // 3️⃣ MODO ESTUDIO
-      // -------------------------
-      case "estudio": {
-        systemPrompt = `
-Eres tutor académico de fisioterapia.
-Explica conceptos con rigor fisiopatológico.
-
-REGLAS:
-- No inventes datos.
-- Si falta información o no se proporciona el documento/fragmento, indícalo.
-- Responde estructurado (definición → claves → ejemplo → resumen si aplica).
-`;
-        temperature = 0.2;
-        max_output_tokens = 600;
-        break;
-      }
-
-      // -------------------------
-      // 4️⃣ PROGRESO
-      // -------------------------
       case "progreso": {
         systemPrompt = `
-Eres un analista docente.
-Analiza el rendimiento del alumno, detecta patrones de error y propone mejoras.
+Eres un analista docente. Evalúas el PROGRESO del alumno a partir de casos previos.
 
-REGLAS:
-- Sé concreto y accionable.
-- Devuelve puntos fuertes, puntos débiles y plan de mejora.
+OBJETIVO
+- Identificar patrones (errores repetidos, sesgos, lagunas).
+- Proponer un plan de mejora concreto.
+
+SALIDA (SIEMPRE)
+1) Fortalezas (3 bullets)
+2) Debilidades (3 bullets)
+3) Patrones detectados (2–4 bullets)
+4) Plan de mejora 7 días (día 1–7 con tarea concreta)
+5) Recomendación de 3 casos siguientes (tema + objetivo)
+
+REGLAS
+- No inventes datos de rendimiento si no están presentes.
+- Sé accionable y específico.
+- No cites papers/guías específicas.
 `;
-        temperature = 0.3;
-        max_output_tokens = 500;
+        temperature = 0.25;
+        max_output_tokens = 700;
         break;
       }
 
       default:
-        return {
-          statusCode: 400,
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ error: "Modo inválido" }),
-        };
+        return json(400, { error: "Modo inválido" });
     }
 
-    // 🔷 CONSTRUCCIÓN DE MENSAJES
-    // Nota: OpenAI Responses API acepta un array con roles en `input`
+    // --------------------------
+    // Construcción de mensajes
+    // --------------------------
+    const trimmedHistory = normalizeHistory(history);
+
+    // Importante: el frontend ya manda history con user/assistant.
+    // Nosotros añadimos el mensaje actual al final.
     const messages = [
-      { role: "system", content: systemPrompt },
-      ...history,
-      { role: "user", content: message },
+      { role: "system", content: systemPrompt.trim() },
+      ...trimmedHistory,
+      { role: "user", content: message.trim() },
     ];
 
     const resp = await client.responses.create({
-      model: "gpt-4o-mini",
+      model: MODEL,
       input: messages,
       temperature,
       max_output_tokens,
@@ -205,50 +253,30 @@ REGLAS:
 
     const output = (resp.output_text || "").trim();
 
-    // ✅ Si es evaluación, intentamos parsear JSON y devolvemos `evaluation`
+    // Si es evaluación, intentamos parsear el JSON para UI
     if (mode === "casos_libres" && action === "evaluar") {
       try {
         const evaluation = JSON.parse(output);
-        return {
-          statusCode: 200,
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ evaluation }),
-        };
-      } catch (parseErr) {
-        // fallback: devolvemos raw para debug en frontend sin romperlo
-        return {
-          statusCode: 200,
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            evaluation: null,
-            error: "La IA no devolvió JSON válido en evaluación.",
-            raw: output,
-          }),
-        };
+        return json(200, { evaluation });
+      } catch {
+        return json(200, {
+          evaluation: null,
+          error: "La IA no devolvió JSON válido en evaluación.",
+          raw: output,
+        });
       }
     }
 
-    // ✅ Respuesta normal (chat)
-    return {
-      statusCode: 200,
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ reply: output }),
-    };
+    return json(200, { reply: output });
   } catch (err) {
-    console.error("ERROR:", err);
-
-    // Propaga status si existe (ej. 429)
+    console.error("FUNCTION ERROR:", err);
     const status = err?.status || err?.response?.status || 500;
 
-    return {
-      statusCode: status,
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        error:
-          err?.response?.data?.error?.message ||
-          err?.message ||
-          "Error interno",
-      }),
-    };
+    return json(status, {
+      error:
+        err?.response?.data?.error?.message ||
+        err?.message ||
+        "Error interno",
+    });
   }
 };
