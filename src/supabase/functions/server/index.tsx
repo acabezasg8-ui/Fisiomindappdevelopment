@@ -354,39 +354,33 @@ NUNCA des la respuesta completa directamente. Objetivo: que el estudiante APREND
 
 Mantén respuestas de 2-4 frases, claras y motivadoras.`
         :
-        `Eres un PACIENTE VIRTUAL EDUCATIVO en una simulación de fisioterapia. Tienes un DOBLE ROL:
+        `Eres un PACIENTE REAL que acude a consulta de fisioterapia. Tu comportamiento debe ser 100% realista.
 
-1. ROL DE PACIENTE: Actúa como un paciente real con esta información (NUNCA menciones el diagnóstico directamente):
-   - Nombre: ${caseData.patientName}
-   - Edad: ${caseData.age}
-   - Género: ${caseData.gender}
-   - Ocupación: ${caseData.occupation || 'no especificada'}
-   - Motivo de consulta: ${caseData.chiefComplaint}
-   - Patología real: ${caseData.pathology}
+INFORMACIÓN DEL PACIENTE:
+- Nombre: ${caseData.patientName}
+- Edad: ${caseData.age} años
+- Género: ${caseData.gender}
+- Ocupación: ${caseData.occupation || 'no especificada'}
+- Queja: ${caseData.chiefComplaint}
 ${clinicalDetailsText}
 
-2. ROL DE TUTOR: Guía sutilmente al estudiante hacia un razonamiento clínico correcto mediante:
-   - Proporcionar información relevante cuando hagan preguntas adecuadas
-   - Dar feedback pedagógico discreto cuando se olviden de aspectos importantes
-   - Responder coherentemente a pruebas de exploración según la patología real
-   - Orientar sin dar directamente la respuesta
+1. PRIMER MENSAJE - Saluda y di tu queja SIMPLE:
+   - "Hola doctor, vengo con un dolor de rodilla que no se me pasa"
+   - "Buenas, llevo días con dolor de cabeza y cuello rígido"
+   - NO des detalles ni uses términos médicos
 
-REGLAS IMPORTANTES:
-- Responde SIEMPRE de forma coherente a la pregunta específica del estudiante
-- Si preguntan sobre dolor: describe localización, tipo, intensidad (EVA), factores que lo agravan/alivian
-- Si preguntan sobre inicio: da cronología clara y posible causa desencadenante
-- Si preguntan sobre actividades/trabajo: relaciona con la patología y ocupación
-- Si hacen exploración física: responde según hallazgos esperados de la patología
-- Si el estudiante va por buen camino, refuerza positivamente
-- Si olvidan preguntar algo crucial, dale pistas sutiles: "Doctor, ¿no quiere saber sobre...?"
-- Si hacen preguntas irrelevantes, redirige educadamente
-- Mantén 2-4 frases máximo, concisas y profesionales
-- NUNCA digas el diagnóstico, deja que el estudiante lo deduzca
+2. RESPONDE SOLO LO QUE TE PREGUNTEN:
+   - NO sabes qué tienes (NUNCA digas "tendinitis", "hernia", términos médicos)
+   - Sensaciones simples: "me duele", "no puedo...", "siento que..."
+   - Si dolor: intensidad simple ("mucho", "poco"), tipo cotidiano ("punzante", "sordo")
+   - Si cuándo empezó: aproximado ("hace unas semanas", "unos días")
+   - Si exploración: responde natural según hallazgos ("Ay duele", "No llego", "Tira")
+   - 1-3 frases máximo, habla como paciente real
+   - NUNCA digas diagnóstico ni términos médicos
 
-FEEDBACK PEDAGÓGICO SUTIL:
-- Si llevan >10 mensajes sin exploración: "¿No va a examinarme?"
-- Si no preguntan por dolor: Menciona síntomas espontáneamente
-- Si diagnóstico parece claro pero no hacen plan: "¿Y qué tratamiento me recomienda?"`;
+3. PISTAS si olvidan:
+   - Tras 5-6 mensajes sin explorar: "¿No me va a revisar?"
+   - Si no preguntan cronología: "llevo tiempo así"`;
 
         const messages = [
           { role: "system", content: systemPrompt },
@@ -440,6 +434,17 @@ function generateLocalResponse(message: string, caseData: any, chatHistory: any[
   const studentMessages = chatHistory.filter(msg => msg.role === 'student');
   const messageCount = studentMessages.length;
   
+  // PRIMER MENSAJE - Saludo inicial del paciente
+  if (messageCount === 0 || (messageCount === 1 && (lowerMessage.includes('hola') || lowerMessage.includes('buenos') || lowerMessage.includes('buenas') || lowerMessage.includes('pase')))) {
+    // El paciente se presenta con queja simple y general
+    const simpleGreetings = [
+      `Hola doctor, vengo porque ${caseData.chiefComplaint.toLowerCase()}`,
+      `Buenas, ${caseData.chiefComplaint.toLowerCase()}`,
+      `Hola, necesito que me vea porque ${caseData.chiefComplaint.toLowerCase()}`
+    ];
+    return simpleGreetings[Math.floor(Math.random() * simpleGreetings.length)];
+  }
+  
   // Analizar si han hecho preguntas clave
   const hasAskedPain = chatHistory.some(msg => 
     msg.role === 'student' && (msg.message.toLowerCase().includes('dolor') || msg.message.toLowerCase().includes('molestia'))
@@ -460,13 +465,13 @@ function generateLocalResponse(message: string, caseData: any, chatHistory: any[
   if (lowerMessage.includes('dolor') || lowerMessage.includes('molestia') || lowerMessage.includes('duele')) {
     if (lowerMessage.includes('intensidad') || lowerMessage.includes('eva') || lowerMessage.includes('escala') || lowerMessage.includes('cuánto')) {
       if (caseData.pathology.includes('cervical')) {
-        return 'Ahora mismo diría que el dolor está en un 6 de 10. Hay días que llega a 7-8 cuando estoy muy tenso o al final de jornadas largas de trabajo.';
+        return 'Pues bastante, diría que un 6 ó 7. Hay días que es insoportable.';
       } else if (caseData.pathology.includes('lumbar')) {
-        return 'En reposo está en 4-5, pero cuando llevo varias horas sentado llega fácilmente a 7 de 10. Es bastante limitante.';
+        return 'Cuando estoy sentado mucho rato es muy fuerte, un 7 fácilmente.';
       } else if (caseData.pathology.includes('hombro') || caseData.pathology.includes('supraespinoso')) {
-        return 'En reposo casi no duele, un 2-3. Pero cuando levanto el brazo, especialmente en abducción, se dispara a 8 de 10. Es un dolor muy agudo.';
+        return 'En reposo casi nada, pero al levantar el brazo me duele muchísimo, un 8.';
       } else {
-        return 'Yo diría que está entre 5 y 7 de 10 dependiendo del momento del día y la actividad que esté haciendo.';
+        return 'Depende del momento, pero suele estar en 6 ó 7 cuando me molesta.';
       }
     }
     

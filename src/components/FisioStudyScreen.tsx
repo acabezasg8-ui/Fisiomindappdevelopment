@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { ArrowLeft, BookOpen, Send, Sparkles, Brain, MessageCircle, FileText, Lightbulb, HelpCircle, RefreshCw, Upload, File, Image as ImageIcon, X, FileType } from 'lucide-react';
+import { ArrowLeft, BookOpen, Send, Sparkles, Brain, MessageCircle, FileText, Lightbulb, HelpCircle, RefreshCw, Upload, File, Image as ImageIcon, X, FileType, ChevronLeft, ChevronRight, ZoomIn, ZoomOut, Maximize2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Button } from './ui/button';
 import { Textarea } from './ui/textarea';
@@ -7,6 +7,7 @@ import { ScrollArea } from './ui/scroll-area';
 import { Badge } from './ui/badge';
 import { toast } from 'sonner@2.0.3';
 import { explainStudyContent, generateStudyQuiz } from '../utils/supabase/client';
+import { PDFViewer } from './PDFViewer';
 
 type Message = {
   role: 'student' | 'tutor';
@@ -21,6 +22,9 @@ type UploadedFile = {
   content: string;
   url?: string;
   size: number;
+  pdfData?: ArrayBuffer;
+  numPages?: number;
+  fileObj?: File;
 };
 
 type FisioStudyScreenProps = {
@@ -30,6 +34,7 @@ type FisioStudyScreenProps = {
 export function FisioStudyScreen({ onBackToHome }: FisioStudyScreenProps) {
   const [studyContent, setStudyContent] = useState('');
   const [uploadedFiles, setUploadedFiles] = useState<UploadedFile[]>([]);
+  const [selectedFileIndex, setSelectedFileIndex] = useState<number>(0);
   const [messages, setMessages] = useState<Message[]>([]);
   const [currentMessage, setCurrentMessage] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -54,14 +59,18 @@ export function FisioStudyScreen({ onBackToHome }: FisioStudyScreenProps) {
       // Importar pdfjs-dist con versión específica
       const pdfjsLib = await import('pdfjs-dist@3.11.174');
       
-      // Configurar worker con URL completa
-      pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js`;
+      // Configurar worker con URL completa - usar el objeto default si existe
+      const pdfjs = pdfjsLib.default || pdfjsLib;
+      
+      if (pdfjs.GlobalWorkerOptions) {
+        pdfjs.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js`;
+      }
 
       const arrayBuffer = await file.arrayBuffer();
       
       console.log('Loading PDF:', file.name, 'Size:', file.size);
       
-      const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+      const pdf = await pdfjs.getDocument({ data: arrayBuffer }).promise;
       
       console.log(`PDF loaded. Total pages: ${pdf.numPages}`);
       
@@ -100,7 +109,7 @@ export function FisioStudyScreen({ onBackToHome }: FisioStudyScreenProps) {
       const fileId = `${Date.now()}-${i}`;
 
       try {
-        // Sin límite de tamaño - los estudiantes pueden subir todo el contenido que necesiten
+        // Sin l��mite de tamaño - los estudiantes pueden subir todo el contenido que necesiten
         // if (file.size > 10 * 1024 * 1024) {
         //   toast.error(`${file.name} es demasiado grande (máximo 10MB)`);
         //   continue;
@@ -117,6 +126,9 @@ export function FisioStudyScreen({ onBackToHome }: FisioStudyScreenProps) {
             type: 'pdf',
             content: text,
             size: file.size,
+            pdfData: file.arrayBuffer(),
+            numPages: file.size > 0 ? Math.ceil(file.size / 1024) : 0, // Estimación simple
+            fileObj: file,
           }]);
           
           toast.success(`PDF cargado: ${file.name}`);
@@ -325,21 +337,21 @@ export function FisioStudyScreen({ onBackToHome }: FisioStudyScreenProps) {
   };
 
   return (
-    <div className="min-h-screen p-6 bg-[#f5f5f7]">
-      <div className="max-w-7xl mx-auto space-y-6">
-        {/* Header */}
+    <div className="min-h-screen bg-[#f5f5f7]">
+      <div className="h-screen flex flex-col p-4 lg:p-6">
+        {/* Header - altura fija */}
         <motion.div
           initial={{ opacity: 0, y: -20 }}
           animate={{ opacity: 1, y: 0 }}
-          className="flex items-center justify-between"
+          className="flex items-center justify-between mb-4 lg:mb-6 flex-shrink-0"
         >
           <div className="flex items-center gap-4">
-            <div className="w-14 h-14 bg-gradient-to-br from-blue-500 to-blue-600 rounded-2xl flex items-center justify-center shadow-lg">
-              <BookOpen className="w-7 h-7 text-white" />
+            <div className="w-12 h-12 lg:w-14 lg:h-14 bg-gradient-to-br from-blue-500 to-blue-600 rounded-2xl flex items-center justify-center shadow-lg">
+              <BookOpen className="w-6 h-6 lg:w-7 lg:h-7 text-white" />
             </div>
             <div>
-              <h1 className="text-4xl text-[#1d1d1f] font-semibold">FisioStudy</h1>
-              <p className="text-[#6e6e73]">Entiende la teoría como nunca antes</p>
+              <h1 className="text-2xl lg:text-4xl text-[#1d1d1f] font-semibold">FisioStudy</h1>
+              <p className="text-sm lg:text-base text-[#6e6e73]">Entiende la teoría como nunca antes</p>
             </div>
           </div>
           <Button
@@ -351,20 +363,22 @@ export function FisioStudyScreen({ onBackToHome }: FisioStudyScreenProps) {
           </Button>
         </motion.div>
 
-        <div className="grid lg:grid-cols-2 gap-6">
+        {/* Grid de contenido - usa el espacio restante */}
+        <div className="flex-1 grid lg:grid-cols-2 gap-4 lg:gap-6 min-h-0">
           {/* Panel de contenido */}
           <motion.div
             initial={{ opacity: 0, x: -20 }}
             animate={{ opacity: 1, x: 0 }}
             transition={{ delay: 0.1 }}
-            className="glass shadow-apple-lg rounded-3xl p-8 h-[calc(100vh-200px)] flex flex-col"
+            className="glass shadow-apple-lg rounded-3xl p-4 lg:p-6 flex flex-col min-h-0"
           >
-            <div className="flex items-center justify-between mb-6">
+            {/* Header del panel - altura fija */}
+            <div className="flex items-center justify-between mb-4 flex-shrink-0">
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 rounded-xl bg-[#0071e3]/10 flex items-center justify-center">
                   <FileText className="w-5 h-5 text-[#0071e3]" />
                 </div>
-                <h2 className="text-2xl text-[#1d1d1f] font-semibold">Tu Contenido de Estudio</h2>
+                <h2 className="text-xl lg:text-2xl text-[#1d1d1f] font-semibold">Tu Contenido</h2>
               </div>
               {hasContent && (
                 <Button
@@ -374,144 +388,197 @@ export function FisioStudyScreen({ onBackToHome }: FisioStudyScreenProps) {
                   size="sm"
                 >
                   <RefreshCw className="w-4 h-4 mr-2" />
-                  Nuevo Tema
+                  Nuevo
                 </Button>
               )}
             </div>
 
-            <div className="flex-1 flex flex-col space-y-4">
+            {/* Contenido scrolleable */}
+            <div className="flex-1 flex flex-col min-h-0 gap-3">
               {/* Área de carga de archivos */}
               {!hasContent && (
-                <div
-                  onDragOver={handleDragOver}
-                  onDragLeave={handleDragLeave}
-                  onDrop={handleDrop}
-                  className={`border-2 border-dashed rounded-2xl p-6 text-center transition-all ${
-                    isDragging
-                      ? 'border-[#0071e3] bg-[#0071e3]/5'
-                      : 'border-[#d2d2d7] hover:border-[#0071e3]/50'
-                  }`}
-                >
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    accept=".pdf,.txt,image/*"
-                    multiple
-                    onChange={(e) => handleFileUpload(e.target.files)}
-                    className="hidden"
+                <>
+                  <div
+                    onDragOver={handleDragOver}
+                    onDragLeave={handleDragLeave}
+                    onDrop={handleDrop}
+                    className={`border-2 border-dashed rounded-2xl p-4 lg:p-6 text-center transition-all flex-shrink-0 ${
+                      isDragging
+                        ? 'border-[#0071e3] bg-[#0071e3]/5'
+                        : 'border-[#d2d2d7] hover:border-[#0071e3]/50'
+                    }`}
+                  >
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      accept=".pdf,.txt,image/*"
+                      multiple
+                      onChange={(e) => handleFileUpload(e.target.files)}
+                      className="hidden"
+                    />
+                    
+                    <div className="space-y-3">
+                      <div className="w-16 h-16 mx-auto rounded-full bg-[#0071e3]/10 flex items-center justify-center">
+                        <Upload className="w-8 h-8 text-[#0071e3]" />
+                      </div>
+                      <div>
+                        <p className="text-sm lg:text-base text-[#1d1d1f] font-medium">
+                          Arrastra archivos aquí o{' '}
+                          <button
+                            onClick={() => fileInputRef.current?.click()}
+                            className="text-[#0071e3] hover:underline"
+                          >
+                            selecciona archivos
+                          </button>
+                        </p>
+                        <p className="text-xs lg:text-sm text-[#6e6e73] mt-1">
+                          Soporta: PDF, TXT, imágenes • Sin límite de tamaño
+                        </p>
+                        <p className="text-xs text-[#ff9500] mt-2 bg-[#ff9500]/10 rounded-lg p-2">
+                          ⚠️ PDFs escaneados: Copia y pega el texto manualmente
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Lista de archivos cargados */}
+                  {uploadedFiles.length > 0 && (
+                    <div className="flex-shrink-0">
+                      <p className="text-sm font-medium text-[#6e6e73] mb-2">Archivos cargados:</p>
+                      <ScrollArea className="max-h-32">
+                        <div className="space-y-2 pr-3">
+                          {uploadedFiles.map((file) => (
+                            <div
+                              key={file.id}
+                              className="flex items-center justify-between bg-white/50 rounded-xl p-3 border border-[#d2d2d7]"
+                            >
+                              <div className="flex items-center gap-3 flex-1 min-w-0">
+                                {file.type === 'pdf' && (
+                                  <FileType className="w-5 h-5 text-red-500 flex-shrink-0" />
+                                )}
+                                {file.type === 'image' && (
+                                  <ImageIcon className="w-5 h-5 text-blue-500 flex-shrink-0" />
+                                )}
+                                {file.type === 'text' && (
+                                  <File className="w-5 h-5 text-gray-500 flex-shrink-0" />
+                                )}
+                                <div className="flex-1 min-w-0">
+                                  <p className="text-sm text-[#1d1d1f] truncate">{file.name}</p>
+                                  <p className="text-xs text-[#6e6e73]">{formatFileSize(file.size)}</p>
+                                </div>
+                              </div>
+                              <Button
+                                onClick={() => removeFile(file.id)}
+                                variant="ghost"
+                                size="sm"
+                                className="text-[#ff3b30] hover:bg-[#ff3b30]/10 rounded-lg flex-shrink-0 h-8 w-8 p-0"
+                              >
+                                <X className="w-4 h-4" />
+                              </Button>
+                            </div>
+                          ))}
+                        </div>
+                      </ScrollArea>
+                    </div>
+                  )}
+
+                  {/* Área de texto - toma el espacio restante */}
+                  <Textarea
+                    value={studyContent}
+                    onChange={(e) => setStudyContent(e.target.value)}
+                    placeholder="Escribe o pega aquí tus apuntes, temas de clase o cualquier contenido teórico de fisioterapia...&#10;&#10;También puedes cargar archivos PDF, imágenes o documentos de texto usando el área de arriba."
+                    className="flex-1 resize-none bg-white/50 border-[#d2d2d7] rounded-2xl p-4 text-sm lg:text-base text-[#1d1d1f] placeholder:text-[#6e6e73] focus:ring-2 focus:ring-[#0071e3] focus:border-transparent min-h-0"
                   />
-                  
-                  <div className="space-y-3">
-                    <div className="w-16 h-16 mx-auto rounded-full bg-[#0071e3]/10 flex items-center justify-center">
-                      <Upload className="w-8 h-8 text-[#0071e3]" />
+                </>
+              )}
+
+              {/* Visor de archivos cuando el contenido está cargado */}
+              {hasContent && uploadedFiles.length > 0 && (
+                <div className="flex-1 flex flex-col min-h-0 gap-3">
+                  {/* Selector de archivos si hay múltiples */}
+                  {uploadedFiles.length > 1 && (
+                    <div className="flex-shrink-0">
+                      <ScrollArea className="w-full">
+                        <div className="flex gap-2 pb-2">
+                          {uploadedFiles.map((file, index) => (
+                            <Button
+                              key={file.id}
+                              onClick={() => setSelectedFileIndex(index)}
+                              variant={selectedFileIndex === index ? "default" : "outline"}
+                              size="sm"
+                              className={`flex items-center gap-2 rounded-xl whitespace-nowrap ${
+                                selectedFileIndex === index
+                                  ? 'bg-[#0071e3] text-white'
+                                  : 'border-[#d2d2d7] text-[#6e6e73]'
+                              }`}
+                            >
+                              {file.type === 'pdf' && <FileType className="w-4 h-4 flex-shrink-0" />}
+                              {file.type === 'image' && <ImageIcon className="w-4 h-4 flex-shrink-0" />}
+                              {file.type === 'text' && <File className="w-4 h-4 flex-shrink-0" />}
+                              <span className="truncate max-w-[150px]">{file.name}</span>
+                            </Button>
+                          ))}
+                        </div>
+                      </ScrollArea>
                     </div>
-                    <div>
-                      <p className="text-[#1d1d1f] font-medium">
-                        Arrastra archivos aquí o{' '}
-                        <button
-                          onClick={() => fileInputRef.current?.click()}
-                          className="text-[#0071e3] hover:underline"
-                        >
-                          selecciona archivos
-                        </button>
-                      </p>
-                      <p className="text-sm text-[#6e6e73] mt-1">
-                        Soporta: PDF, TXT, imágenes (JPG, PNG) • Sin límite de tamaño
-                      </p>
-                      <p className="text-xs text-[#ff9500] mt-2 bg-[#ff9500]/10 rounded-lg p-2">
-                        ⚠️ PDFs escaneados (imágenes): Copia y pega el texto manualmente
-                      </p>
-                    </div>
+                  )}
+
+                  {/* Visualizador según tipo de archivo - toma todo el espacio */}
+                  <div className="flex-1 bg-white/30 rounded-2xl border border-[#d2d2d7] overflow-hidden min-h-0">
+                    {uploadedFiles[selectedFileIndex]?.type === 'pdf' && uploadedFiles[selectedFileIndex]?.fileObj && (
+                      <PDFViewer file={uploadedFiles[selectedFileIndex].fileObj || null} />
+                    )}
+                    
+                    {uploadedFiles[selectedFileIndex]?.type === 'image' && (
+                      <div className="h-full flex items-center justify-center p-4">
+                        <img
+                          src={uploadedFiles[selectedFileIndex].url}
+                          alt={uploadedFiles[selectedFileIndex].name}
+                          className="max-w-full max-h-full object-contain rounded-xl shadow-lg"
+                        />
+                      </div>
+                    )}
+                    
+                    {uploadedFiles[selectedFileIndex]?.type === 'text' && (
+                      <ScrollArea className="h-full p-6">
+                        <div className="prose prose-sm max-w-none">
+                          <pre className="whitespace-pre-wrap font-sans text-[#1d1d1f] text-sm leading-relaxed">
+                            {uploadedFiles[selectedFileIndex].content}
+                          </pre>
+                        </div>
+                      </ScrollArea>
+                    )}
                   </div>
                 </div>
               )}
 
-              {/* Lista de archivos cargados */}
-              {uploadedFiles.length > 0 && !hasContent && (
-                <div className="space-y-2">
-                  <p className="text-sm font-medium text-[#6e6e73]">Archivos cargados:</p>
-                  <ScrollArea className="max-h-32">
-                    <div className="space-y-2">
-                      {uploadedFiles.map((file) => (
-                        <div
-                          key={file.id}
-                          className="flex items-center justify-between bg-white/50 rounded-xl p-3 border border-[#d2d2d7]"
-                        >
-                          <div className="flex items-center gap-3 flex-1 min-w-0">
-                            {file.type === 'pdf' && (
-                              <FileType className="w-5 h-5 text-red-500 flex-shrink-0" />
-                            )}
-                            {file.type === 'image' && (
-                              <ImageIcon className="w-5 h-5 text-blue-500 flex-shrink-0" />
-                            )}
-                            {file.type === 'text' && (
-                              <File className="w-5 h-5 text-gray-500 flex-shrink-0" />
-                            )}
-                            <div className="flex-1 min-w-0">
-                              <p className="text-sm text-[#1d1d1f] truncate">{file.name}</p>
-                              <p className="text-xs text-[#6e6e73]">{formatFileSize(file.size)}</p>
-                            </div>
-                          </div>
-                          <Button
-                            onClick={() => removeFile(file.id)}
-                            variant="ghost"
-                            size="sm"
-                            className="text-[#ff3b30] hover:bg-[#ff3b30]/10 rounded-lg flex-shrink-0"
-                          >
-                            <X className="w-4 h-4" />
-                          </Button>
-                        </div>
-                      ))}
+              {/* Visualizador de texto plano cuando el contenido está cargado */}
+              {hasContent && studyContent.trim().length > 0 && uploadedFiles.length === 0 && (
+                <div className="flex-1 bg-white/30 rounded-2xl border border-[#d2d2d7] p-6 overflow-hidden min-h-0">
+                  <ScrollArea className="h-full">
+                    <div className="prose prose-sm max-w-none">
+                      <pre className="whitespace-pre-wrap font-sans text-[#1d1d1f] text-sm leading-relaxed">
+                        {studyContent}
+                      </pre>
                     </div>
                   </ScrollArea>
                 </div>
               )}
 
-              {/* Vista previa de imágenes cuando ya hay contenido */}
-              {hasContent && uploadedFiles.some(f => f.type === 'image') && (
-                <div className="space-y-2">
-                  <p className="text-sm font-medium text-[#6e6e73]">Imágenes cargadas:</p>
-                  <div className="grid grid-cols-3 gap-2">
-                    {uploadedFiles
-                      .filter(f => f.type === 'image')
-                      .map((file) => (
-                        <div key={file.id} className="relative group">
-                          <img
-                            src={file.url}
-                            alt={file.name}
-                            className="w-full h-20 object-cover rounded-xl border border-[#d2d2d7]"
-                          />
-                          <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity rounded-xl flex items-center justify-center">
-                            <p className="text-white text-xs px-2 text-center">{file.name}</p>
-                          </div>
-                        </div>
-                      ))}
+              {/* Footer con stats y botón - altura fija */}
+              {!hasContent && (
+                <div className="flex items-center justify-between flex-shrink-0 pt-2">
+                  <div className="flex items-center gap-4 text-sm text-[#6e6e73]">
+                    <div className="flex items-center gap-2">
+                      <Sparkles className="w-4 h-4" />
+                      <span>{studyContent.length} caracteres</span>
+                    </div>
+                    {uploadedFiles.length > 0 && (
+                      <Badge className="bg-[#0071e3]/10 text-[#0071e3] border-none">
+                        {uploadedFiles.length} archivo{uploadedFiles.length > 1 ? 's' : ''}
+                      </Badge>
+                    )}
                   </div>
-                </div>
-              )}
-
-              {/* Área de texto */}
-              <Textarea
-                value={studyContent}
-                onChange={(e) => setStudyContent(e.target.value)}
-                placeholder="Escribe o pega aquí tus apuntes, temas de clase o cualquier contenido teórico de fisioterapía...&#10;&#10;También puedes cargar archivos PDF, imágenes o documentos de texto usando el área de arriba."
-                className="flex-1 resize-none bg-white/50 border-[#d2d2d7] rounded-2xl p-4 text-[#1d1d1f] placeholder:text-[#6e6e73] focus:ring-2 focus:ring-[#0071e3] focus:border-transparent"
-                disabled={hasContent}
-              />
-
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-4 text-sm text-[#6e6e73]">
-                  <div className="flex items-center gap-2">
-                    <Sparkles className="w-4 h-4" />
-                    <span>{studyContent.length} caracteres</span>
-                  </div>
-                  {uploadedFiles.length > 0 && (
-                    <Badge className="bg-[#0071e3]/10 text-[#0071e3] border-none">
-                      {uploadedFiles.length} archivo{uploadedFiles.length > 1 ? 's' : ''}
-                    </Badge>
-                  )}
-                </div>
-                {!hasContent && (
                   <Button
                     onClick={handleLoadContent}
                     disabled={getCombinedContent().trim().length < 50 || isLoading}
@@ -529,8 +596,8 @@ export function FisioStudyScreen({ onBackToHome }: FisioStudyScreenProps) {
                       </>
                     )}
                   </Button>
-                )}
-              </div>
+                </div>
+              )}
             </div>
           </motion.div>
 
@@ -539,14 +606,15 @@ export function FisioStudyScreen({ onBackToHome }: FisioStudyScreenProps) {
             initial={{ opacity: 0, x: 20 }}
             animate={{ opacity: 1, x: 0 }}
             transition={{ delay: 0.2 }}
-            className="glass shadow-apple-lg rounded-3xl p-8 h-[calc(100vh-200px)] flex flex-col"
+            className="glass shadow-apple-lg rounded-3xl p-4 lg:p-6 flex flex-col min-h-0"
           >
-            <div className="flex items-center justify-between mb-6">
+            {/* Header del panel - altura fija */}
+            <div className="flex items-center justify-between mb-4 flex-shrink-0">
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 rounded-xl bg-[#34c759]/10 flex items-center justify-center">
                   <MessageCircle className="w-5 h-5 text-[#34c759]" />
                 </div>
-                <h2 className="text-2xl text-[#1d1d1f] font-semibold">Tutor IA</h2>
+                <h2 className="text-xl lg:text-2xl text-[#1d1d1f] font-semibold">Tutor IA</h2>
               </div>
               {hasContent && (
                 <Badge className="bg-[#34c759]/10 text-[#34c759] border-none">
@@ -555,24 +623,25 @@ export function FisioStudyScreen({ onBackToHome }: FisioStudyScreenProps) {
               )}
             </div>
 
+            {/* Contenido del chat */}
             {!hasContent ? (
               <div className="flex-1 flex items-center justify-center">
-                <div className="text-center space-y-4 max-w-md">
+                <div className="text-center space-y-4 max-w-md px-4">
                   <div className="w-20 h-20 bg-gradient-to-br from-blue-400 to-blue-500 rounded-full flex items-center justify-center mx-auto opacity-20">
                     <Brain className="w-10 h-10 text-white" />
                   </div>
-                  <h3 className="text-xl text-[#1d1d1f] font-semibold">
+                  <h3 className="text-lg lg:text-xl text-[#1d1d1f] font-semibold">
                     Carga tu contenido para empezar
                   </h3>
-                  <p className="text-[#6e6e73] leading-relaxed">
+                  <p className="text-sm lg:text-base text-[#6e6e73] leading-relaxed">
                     Puedes escribir texto directamente o cargar archivos PDF, documentos de texto o imágenes.
                     Una vez cargado, podré ayudarte a comprenderlo mejor.
                   </p>
                 </div>
               </div>
             ) : showQuiz && quizData ? (
-              <div className="flex-1 flex flex-col">
-                <div className="flex items-center justify-between mb-4">
+              <div className="flex-1 flex flex-col min-h-0">
+                <div className="flex items-center justify-between mb-4 flex-shrink-0">
                   <h3 className="text-lg text-[#1d1d1f] font-semibold">Evaluación de Comprensión</h3>
                   <Button
                     onClick={() => setShowQuiz(false)}
@@ -583,7 +652,7 @@ export function FisioStudyScreen({ onBackToHome }: FisioStudyScreenProps) {
                     Volver al Chat
                   </Button>
                 </div>
-                <ScrollArea className="flex-1 pr-4">
+                <ScrollArea className="flex-1 pr-3 min-h-0">
                   <div className="space-y-6">
                     {/* Resumen */}
                     {quizData.summary && (
@@ -639,9 +708,9 @@ export function FisioStudyScreen({ onBackToHome }: FisioStudyScreenProps) {
                 </ScrollArea>
               </div>
             ) : (
-              <>
-                {/* Chat messages */}
-                <ScrollArea className="flex-1 pr-4 mb-4" ref={chatScrollRef}>
+              <div className="flex-1 flex flex-col min-h-0">
+                {/* Chat messages - área scrolleable */}
+                <ScrollArea className="flex-1 pr-3 mb-4 min-h-0" ref={chatScrollRef}>
                   <div className="space-y-4">
                     <AnimatePresence>
                       {messages.map((msg, index) => (
@@ -682,52 +751,53 @@ export function FisioStudyScreen({ onBackToHome }: FisioStudyScreenProps) {
                   </div>
                 </ScrollArea>
 
-                {/* Quick actions */}
-                <div className="mb-4 flex flex-wrap gap-2">
-                  <Button
-                    onClick={() => handleQuickAction('explain')}
-                    variant="outline"
-                    size="sm"
-                    className="border-[#d2d2d7] text-[#6e6e73] hover:text-[#1d1d1f] hover:bg-white rounded-xl text-xs"
-                    disabled={isLoading}
-                  >
-                    <Sparkles className="w-3 h-3 mr-1" />
-                    Explicar concepto
-                  </Button>
-                  <Button
-                    onClick={() => handleQuickAction('example')}
-                    variant="outline"
-                    size="sm"
-                    className="border-[#d2d2d7] text-[#6e6e73] hover:text-[#1d1d1f] hover:bg-white rounded-xl text-xs"
-                    disabled={isLoading}
-                  >
-                    <Lightbulb className="w-3 h-3 mr-1" />
-                    Ejemplo clínico
-                  </Button>
-                  <Button
-                    onClick={() => handleQuickAction('simplify')}
-                    variant="outline"
-                    size="sm"
-                    className="border-[#d2d2d7] text-[#6e6e73] hover:text-[#1d1d1f] hover:bg-white rounded-xl text-xs"
-                    disabled={isLoading}
-                  >
-                    <RefreshCw className="w-3 h-3 mr-1" />
-                    Simplificar
-                  </Button>
-                  <Button
-                    onClick={() => handleQuickAction('questions')}
-                    variant="outline"
-                    size="sm"
-                    className="border-[#d2d2d7] text-[#6e6e73] hover:text-[#1d1d1f] hover:bg-white rounded-xl text-xs"
-                    disabled={isLoading}
-                  >
-                    <HelpCircle className="w-3 h-3 mr-1" />
-                    Preguntas clave
-                  </Button>
-                </div>
+                {/* Controles del chat - altura fija */}
+                <div className="flex-shrink-0 space-y-3">
+                  {/* Quick actions */}
+                  <div className="flex flex-wrap gap-2">
+                    <Button
+                      onClick={() => handleQuickAction('explain')}
+                      variant="outline"
+                      size="sm"
+                      className="border-[#d2d2d7] text-[#6e6e73] hover:text-[#1d1d1f] hover:bg-white rounded-xl text-xs"
+                      disabled={isLoading}
+                    >
+                      <Sparkles className="w-3 h-3 mr-1" />
+                      Explicar
+                    </Button>
+                    <Button
+                      onClick={() => handleQuickAction('example')}
+                      variant="outline"
+                      size="sm"
+                      className="border-[#d2d2d7] text-[#6e6e73] hover:text-[#1d1d1f] hover:bg-white rounded-xl text-xs"
+                      disabled={isLoading}
+                    >
+                      <Lightbulb className="w-3 h-3 mr-1" />
+                      Ejemplo
+                    </Button>
+                    <Button
+                      onClick={() => handleQuickAction('simplify')}
+                      variant="outline"
+                      size="sm"
+                      className="border-[#d2d2d7] text-[#6e6e73] hover:text-[#1d1d1f] hover:bg-white rounded-xl text-xs"
+                      disabled={isLoading}
+                    >
+                      <RefreshCw className="w-3 h-3 mr-1" />
+                      Simplificar
+                    </Button>
+                    <Button
+                      onClick={() => handleQuickAction('questions')}
+                      variant="outline"
+                      size="sm"
+                      className="border-[#d2d2d7] text-[#6e6e73] hover:text-[#1d1d1f] hover:bg-white rounded-xl text-xs"
+                      disabled={isLoading}
+                    >
+                      <HelpCircle className="w-3 h-3 mr-1" />
+                      Preguntas
+                    </Button>
+                  </div>
 
-                {/* Input area */}
-                <div className="space-y-3">
+                  {/* Input area */}
                   <div className="flex gap-2">
                     <Textarea
                       value={currentMessage}
@@ -746,7 +816,7 @@ export function FisioStudyScreen({ onBackToHome }: FisioStudyScreenProps) {
                     <Button
                       onClick={handleSendMessage}
                       disabled={!currentMessage.trim() || isLoading}
-                      className="bg-[#0071e3] hover:bg-[#0077ed] text-white rounded-2xl px-4"
+                      className="bg-[#0071e3] hover:bg-[#0077ed] text-white rounded-2xl px-4 self-end"
                     >
                       <Send className="w-4 h-4" />
                     </Button>
@@ -761,7 +831,7 @@ export function FisioStudyScreen({ onBackToHome }: FisioStudyScreenProps) {
                     Evaluar mi Comprensión
                   </Button>
                 </div>
-              </>
+              </div>
             )}
           </motion.div>
         </div>
