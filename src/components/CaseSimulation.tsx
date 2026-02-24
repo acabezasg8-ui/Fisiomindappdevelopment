@@ -38,41 +38,53 @@ export function CaseSimulation({
   }, [chatHistory]);
 
   const handleSendMessage = async () => {
-    if (message.trim()) {
-      const newHistory = [...chatHistory, { role: 'student' as const, message }];
-      onChatUpdate(newHistory);
-      const userMessage = message;
-      setMessage('');
-      setIsTyping(true);
+    if (!message.trim()) return;
 
-      try {
-        await new Promise((resolve) => setTimeout(resolve, 300));
+    const newHistory = [...chatHistory, { role: 'student' as const, message }];
+    onChatUpdate(newHistory);
 
-const res = await fetch("/.netlify/functions/chat", {
-  method: "POST",
-  headers: { "Content-Type": "application/json" },
-  body: JSON.stringify({
-    message: userMessage,
-    caseData,
-    chatHistory: newHistory,
-    mode: "patient",
-  }),
-});
+    const userMessage = message;
+    setMessage('');
+    setIsTyping(true);
 
-if (!res.ok) {
-  const txt = await res.text();
-  throw new Error(txt);
-}
+    try {
+      await new Promise((resolve) => setTimeout(resolve, 300));
 
-const data = await res.json();
-onChatUpdate([...newHistory, { role: "patient" as const, message: data.reply }]);
-      } catch (error) {
-        console.error('Error getting AI response:', error);
-        toast.error('Error al obtener respuesta del paciente');
-        onChatUpdate([...newHistory, { role: 'patient' as const, message: 'Disculpe, ¿puede repetir la pregunta?' }]);
-      } finally {
-        setIsTyping(false);
+      const res = await fetch("/.netlify/functions/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          mode: "casos_libres",
+          action: "paciente",
+          message: userMessage,
+          history: newHistory.map((msg) => ({
+            role: msg.role === "student" ? "user" : "assistant",
+            content: msg.message,
+          })),
+        }),
+      });
+
+      if (!res.ok) {
+        const txt = await res.text();
+        throw new Error(txt);
       }
+
+      const data = await res.json();
+
+      onChatUpdate([
+        ...newHistory,
+        { role: "patient" as const, message: data.reply }
+      ]);
+
+    } catch (error) {
+      console.error('Error getting AI response:', error);
+      toast.error('Error al obtener respuesta del paciente');
+      onChatUpdate([
+        ...newHistory,
+        { role: 'patient' as const, message: 'Disculpe, ¿puede repetir la pregunta?' }
+      ]);
+    } finally {
+      setIsTyping(false);
     }
   };
 
@@ -85,7 +97,6 @@ onChatUpdate([...newHistory, { role: "patient" as const, message: data.reply }])
 
   return (
     <div className="min-h-screen flex flex-col bg-[#f5f5f7]">
-      {/* Header - Apple style */}
       <div className="glass border-b border-[#d2d2d7] px-6 py-4 sticky top-0 z-40">
         <div className="max-w-7xl mx-auto flex items-center justify-between">
           <div className="space-y-1">
@@ -120,18 +131,11 @@ onChatUpdate([...newHistory, { role: "patient" as const, message: data.reply }])
         </div>
       </div>
 
-      {/* Main content */}
       <div className="flex-1 flex overflow-hidden">
-        {/* Chat area */}
         <div className="flex-1 flex flex-col max-w-5xl mx-auto w-full p-6">
-          {/* Messages */}
           <div 
             ref={scrollRef} 
             className="flex-1 space-y-4 overflow-y-auto pb-4"
-            style={{ 
-              scrollbarWidth: 'thin',
-              scrollbarColor: '#d2d2d7 transparent'
-            }}
           >
             <AnimatePresence initial={false}>
               {chatHistory.map((chat, index) => (
@@ -159,38 +163,22 @@ onChatUpdate([...newHistory, { role: "patient" as const, message: data.reply }])
             </AnimatePresence>
 
             {isTyping && (
-              <motion.div
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                className="flex justify-start"
-              >
+              <div className="flex justify-start">
                 <div className="glass shadow-apple border border-[#d2d2d7] rounded-3xl px-5 py-3">
-                  <div className="flex gap-1.5">
-                    <span className="w-2 h-2 bg-[#6e6e73] rounded-full animate-bounce"></span>
-                    <span
-                      className="w-2 h-2 bg-[#6e6e73] rounded-full animate-bounce"
-                      style={{ animationDelay: '0.1s' }}
-                    ></span>
-                    <span
-                      className="w-2 h-2 bg-[#6e6e73] rounded-full animate-bounce"
-                      style={{ animationDelay: '0.2s' }}
-                    ></span>
-                  </div>
+                  Escribiendo...
                 </div>
-              </motion.div>
+              </div>
             )}
           </div>
 
-          {/* Input area */}
           <div className="glass rounded-3xl p-4 shadow-apple-lg border border-[#d2d2d7]">
             <div className="flex gap-3 items-end">
               <Textarea
                 value={message}
                 onChange={(e) => setMessage(e.target.value)}
-                onKeyPress={handleKeyPress}
+                onKeyDown={handleKeyPress}
                 placeholder="Escribe tu mensaje..."
-                className="flex-1 resize-none border-none bg-transparent focus:ring-0 text-[15px] min-h-[44px] max-h-[120px]"
-                rows={1}
+                className="flex-1 resize-none border-none bg-transparent focus:ring-0 text-[15px]"
               />
               <Button
                 onClick={handleSendMessage}
@@ -202,49 +190,6 @@ onChatUpdate([...newHistory, { role: "patient" as const, message: data.reply }])
             </div>
           </div>
         </div>
-
-        {/* Notes panel */}
-        <AnimatePresence>
-          {notesOpen ? (
-            <motion.div
-              initial={{ width: 0, opacity: 0 }}
-              animate={{ width: 384, opacity: 1 }}
-              exit={{ width: 0, opacity: 0 }}
-              transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
-              className="border-l border-[#d2d2d7] glass overflow-hidden"
-            >
-              <div className="w-96 h-full flex flex-col p-6">
-                <div className="flex items-center justify-between mb-4">
-                  <h3 className="text-lg text-[#1d1d1f] font-semibold">Notas Clínicas</h3>
-                  <Button
-                    onClick={() => setNotesOpen(false)}
-                    variant="ghost"
-                    className="text-[#6e6e73] hover:text-[#1d1d1f] rounded-full w-8 h-8 p-0"
-                  >
-                    ×
-                  </Button>
-                </div>
-                <p className="text-sm text-[#6e6e73] mb-4">
-                  Anota hallazgos importantes del caso
-                </p>
-                <Textarea
-                  value={notes}
-                  onChange={(e) => onNotesUpdate(e.target.value)}
-                  placeholder="Ej: Dolor cervical posterior, EVA 6/10..."
-                  className="flex-1 resize-none border-[#d2d2d7] rounded-2xl bg-white/50 text-[15px] leading-relaxed"
-                />
-              </div>
-            </motion.div>
-          ) : (
-            <motion.button
-              whileHover={{ scale: 1.05 }}
-              onClick={() => setNotesOpen(true)}
-              className="fixed right-6 bottom-6 glass shadow-apple-lg rounded-full p-4 border border-[#d2d2d7] hover:border-[#0071e3] transition-colors z-50"
-            >
-              <FileText className="w-6 h-6 text-[#0071e3]" />
-            </motion.button>
-          )}
-        </AnimatePresence>
       </div>
     </div>
   );
