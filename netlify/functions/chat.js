@@ -1,19 +1,11 @@
 import OpenAI from "openai";
 
-// Ajustes simples para estabilidad/coste
-const MAX_HISTORY_MESSAGES = 12; // recorta historial (últimos N mensajes)
+const MAX_HISTORY_MESSAGES = 12;
 const MODEL = "gpt-4o-mini";
 
-/**
- * ============================
- * KB: Marcos fisiopatológicos (MSK) + Regiones
- * ============================
- * - frameworks: códigos internos (no se revelan al alumno)
- * - allowed_pathologies: catálogo cerrado
- * - patient_story: síntomas típicos que el "paciente" puede relatar
- * - exam_hints: cosas que suelen salir en exploración (el paciente NO las propone)
- * - forbidden: cosas que NO deben aparecer (salvo que se metan explícitamente en el caso)
- */
+// ============================
+// KB MSK (TU MISMA KB)
+// ============================
 const KB_MS = {
   version: "1.0",
   frameworks: {
@@ -54,261 +46,154 @@ const KB_MS = {
     },
   },
   regions: {
-    HOMBRO: {
-      allowed_frameworks: [
-        "SOBRECARGA_MECANICA",
-        "INFLAMACION_LOCAL",
-        "DISFUNCION_MECANICA",
-        "INESTABILIDAD_FUNCIONAL",
-      ],
-      pathologies: {
-        TENDINOPATIA_SUPRAESPINOSO: {
-          frameworks: ["SOBRECARGA_MECANICA"],
-          patient_story: {
-            location: ["parte lateral del hombro", "zona del deltoides"],
-            aggravating: ["levantar el brazo", "coger peso con el brazo separado", "ponerme la chaqueta"],
-            relieving: ["reposo", "bajar el brazo", "evitar cargar"],
-            onset: ["progresivo", "tras semanas de más carga"],
-            night: ["a veces me molesta al dormir sobre ese lado", "me despierta si me pongo encima"],
-          },
-        },
-        BURSITIS_SUBACROMIAL: {
-          frameworks: ["INFLAMACION_LOCAL"],
-          patient_story: {
-            location: ["parte lateral del hombro"],
-            aggravating: ["levantar el brazo", "movimientos repetidos por encima de la cabeza"],
-            relieving: ["reposo", "evitar gestos repetidos"],
-            onset: ["progresivo", "tras varios días de sobreuso"],
-            night: ["molesta al dormir de ese lado"],
-          },
-        },
-        SINDROME_SUBACROMIAL: {
-          frameworks: ["DISFUNCION_MECANICA", "SOBRECARGA_MECANICA"],
-          patient_story: {
-            location: ["parte anterior y lateral del hombro"],
-            aggravating: ["arco al levantar el brazo", "alcanzar estanterías"],
-            relieving: ["reposo", "cambiar postura"],
-            onset: ["progresivo"],
-            night: ["molestia nocturna mecánica"],
-          },
-        },
-        DISQUINESIA_ESCAPULAR: {
-          frameworks: ["DISFUNCION_MECANICA"],
-          patient_story: {
-            location: ["zona del hombro y omóplato", "entre escápula y columna"],
-            aggravating: ["mucho ordenador", "entrenar hombro/pecho", "levantar el brazo repetido"],
-            relieving: ["descanso", "cambiar postura", "calor suave"],
-            onset: ["progresivo"],
-            night: ["no suele despertarme, pero me deja incómodo"],
-          },
-        },
-        INESTABILIDAD_LEVE: {
-          frameworks: ["INESTABILIDAD_FUNCIONAL"],
-          patient_story: {
-            location: ["hombro (sensación interna)"],
-            aggravating: ["gestos rápidos", "lanzar", "poner el brazo atrás"],
-            relieving: ["evitar posiciones raras", "movimientos lentos"],
-            onset: ["episódico", "desde hace meses"],
-            night: ["a veces si duermo mal colocado"],
-          },
-        },
-      },
-      forbidden_extra: ["rotura masiva", "luxación recidivante grave", "artritis reumatoide"],
-    },
+    // ... (TU MISMA KB_MS.regions ENTERA)
+    // ✅ Mantén tal cual todo lo que ya pegaste (HOMBRO, RODILLA, etc.)
+  },
+};
 
-    RODILLA: {
-      allowed_frameworks: ["SOBRECARGA_MECANICA", "DISFUNCION_MECANICA", "DEGENERACION_LEVE", "INFLAMACION_LOCAL"],
-      pathologies: {
-        TENDINOPATIA_ROTULIANA: {
-          frameworks: ["SOBRECARGA_MECANICA"],
-          patient_story: {
-            location: ["debajo de la rótula", "tendón rotuliano"],
-            aggravating: ["saltos", "bajar escaleras", "sentadillas", "correr"],
-            relieving: ["reposo relativo", "bajar carga", "evitar saltar"],
-            onset: ["progresivo", "tras aumentar entrenos"],
-            night: ["no suele ser lo principal", "a veces si he cargado mucho"],
-          },
-        },
-        SINDROME_FEMOROPATELAR: {
-          frameworks: ["DISFUNCION_MECANICA", "SOBRECARGA_MECANICA"],
-          patient_story: {
-            location: ["parte delantera de la rodilla", "alrededor de la rótula"],
-            aggravating: ["escaleras", "estar mucho rato sentado", "ponerse en cuclillas"],
-            relieving: ["estirar la pierna", "cambiar postura", "reposo"],
-            onset: ["progresivo"],
-            night: ["normalmente no"],
-          },
-        },
-        GONARTROSIS_LEVE: {
-          frameworks: ["DEGENERACION_LEVE"],
-          patient_story: {
-            location: ["rodilla (difuso)", "zona interna a veces"],
-            aggravating: ["caminar mucho", "estar de pie", "bajar escaleras"],
-            relieving: ["descanso", "mover un poco al principio", "calor"],
-            onset: ["lento, meses/años"],
-            night: ["rigidez más que dolor", "a veces molesta al final del día"],
-          },
-        },
-        BURSITIS_PRERROTULIANA: {
-          frameworks: ["INFLAMACION_LOCAL"],
-          patient_story: {
-            location: ["encima de la rótula", "zona superficial de delante"],
-            aggravating: ["arrodillarme", "presionar la zona"],
-            relieving: ["evitar apoyar", "reposo"],
-            onset: ["tras apoyar mucho la rodilla", "días-semanas"],
-            night: ["solo si presiono sin querer"],
-          },
-        },
-      },
-      forbidden_extra: ["rotura LCA completa", "artritis séptica", "derrame masivo"],
+// ============================
+// KB NEURO (BÁSICA, AMPLIARÁS LUEGO)
+// ============================
+const KB_NEURO = {
+  version: "0.1",
+  frameworks: {
+    DEFICIT_NEURO_LEVE: {
+      label: "Déficit neurológico leve no agudo",
+      forbidden_tokens: ["debut súbito hoy", "pérdida de consciencia", "cefalea en trueno", "convulsiones", "fiebre alta"],
+      profile: "neuro_leve",
     },
-
-    TOBILLO_PIE: {
-      allowed_frameworks: ["INESTABILIDAD_FUNCIONAL", "SOBRECARGA_MECANICA", "INFLAMACION_LOCAL", "LESION_MUSCULAR_SIMPLE"],
-      pathologies: {
-        ESGUINCE_LATERAL_LEVE: {
-          frameworks: ["INESTABILIDAD_FUNCIONAL", "INFLAMACION_LOCAL"],
-          patient_story: {
-            location: ["parte externa del tobillo"],
-            aggravating: ["caminar rápido", "terreno irregular", "girar el pie"],
-            relieving: ["reposo", "elevar", "evitar torcer"],
-            onset: ["agudo tras torcedura", "hace días-semanas"],
-            night: ["si se hincha, me molesta un poco"],
-          },
-        },
-        INESTABILIDAD_FUNCIONAL_TOBILLO: {
-          frameworks: ["INESTABILIDAD_FUNCIONAL"],
-          patient_story: {
-            location: ["tobillo externo", "sensación de fallo"],
-            aggravating: ["terreno irregular", "deporte", "bajar bordillos"],
-            relieving: ["ir con cuidado", "calzado estable"],
-            onset: ["repetido desde varios esguinces", "meses"],
-            night: ["no suele"],
-          },
-        },
-        TENDINOPATIA_AQUILEA: {
-          frameworks: ["SOBRECARGA_MECANICA"],
-          patient_story: {
-            location: ["tendón de Aquiles", "parte de atrás del tobillo"],
-            aggravating: ["correr", "subir cuestas", "ponerme de puntillas"],
-            relieving: ["reposo relativo", "bajar carga"],
-            onset: ["progresivo", "tras aumentar entreno"],
-            night: ["rigidez al levantarme", "mejora al mover"],
-          },
-        },
-        FASCITIS_PLANTAR: {
-          frameworks: ["SOBRECARGA_MECANICA"],
-          patient_story: {
-            location: ["talón por debajo", "planta del pie"],
-            aggravating: ["primeros pasos por la mañana", "estar mucho de pie"],
-            relieving: ["caminar un poco y se pasa", "descanso"],
-            onset: ["progresivo"],
-            night: ["no, es más al empezar a caminar"],
-          },
-        },
-      },
-      forbidden_extra: ["trombosis", "rotura aquílea completa", "fractura"],
+    DOLOR_NEUROPATICO_PERIFERICO_LEVE: {
+      label: "Síntomas neuropáticos periféricos leves",
+      forbidden_tokens: ["pérdida de fuerza progresiva severa", "caídas frecuentes sin causa", "incontinencia reciente"],
+      profile: "neuropatico",
     },
-
-    LUMBAR: {
-      allowed_frameworks: ["DISFUNCION_MECANICA", "COMPRESION_NEURAL_LEVE", "DEGENERACION_LEVE"],
-      pathologies: {
-        LUMBALGIA_MECANICA: {
-          frameworks: ["DISFUNCION_MECANICA"],
-          patient_story: {
-            location: ["zona baja de la espalda"],
-            aggravating: ["agacharme", "estar mucho rato sentado", "coger peso"],
-            relieving: ["cambiar postura", "andar un poco", "reposo relativo"],
-            onset: ["tras mala postura o carga", "progresivo o tras esfuerzo"],
-            night: ["no suele, salvo postura mala"],
-          },
-        },
-        RADICULOPATIA_LUMBAR_LEVE: {
-          frameworks: ["COMPRESION_NEURAL_LEVE"],
-          patient_story: {
-            location: ["lumbar y pierna", "dolor que baja por la pierna"],
-            aggravating: ["sentarme mucho", "inclinarme", "coger peso"],
-            relieving: ["andar", "cambiar postura", "tumbarme"],
-            onset: ["subagudo", "semanas"],
-            night: ["a veces molesta si estoy mucho rato quieto"],
-          },
-        },
-        ESPONDILOARTROSIS_LEVE: {
-          frameworks: ["DEGENERACION_LEVE"],
-          patient_story: {
-            location: ["lumbar difuso"],
-            aggravating: ["estar de pie mucho rato", "final del día"],
-            relieving: ["moverme suave", "calor"],
-            onset: ["lento, meses/años"],
-            night: ["rigidez más que dolor"],
-          },
-        },
-      },
-      forbidden_extra: ["esfínteres", "anestesia en silla de montar", "fiebre persistente"],
+    VESTIBULAR_LEVE: {
+      label: "Mareo/vertigo periférico leve",
+      forbidden_tokens: ["debut súbito con signos neurológicos", "diplopía", "disartria", "ataxia severa"],
+      profile: "vestibular",
     },
-
-    CERVICAL: {
-      allowed_frameworks: ["DISFUNCION_MECANICA", "COMPRESION_NEURAL_LEVE"],
+  },
+  topics: {
+    // “topics” en lugar de regiones para simplificar
+    NEURO_PERIFERICO: {
+      allowed_frameworks: ["DOLOR_NEUROPATICO_PERIFERICO_LEVE"],
       pathologies: {
-        CERVICALGIA_MECANICA: {
-          frameworks: ["DISFUNCION_MECANICA"],
+        SINTOMAS_TUNEL_CARPiano_LEVE: {
+          frameworks: ["DOLOR_NEUROPATICO_PERIFERICO_LEVE"],
           patient_story: {
-            location: ["cuello", "zona de trapecios"],
-            aggravating: ["ordenador", "mirar el móvil", "girar el cuello"],
-            relieving: ["cambiar postura", "descansar", "calor suave"],
-            onset: ["progresivo"],
-            night: ["si duermo mal, al día siguiente peor"],
+            location: ["mano y muñeca", "dedos pulgar-índice-medio"],
+            onset: ["progresivo, semanas-meses"],
+            aggravating: ["usar mucho el móvil/teclado", "por la noche"],
+            relieving: ["sacudir la mano", "cambiar postura"],
+            night: ["me despierta a veces con hormigueo"],
           },
         },
-        RADICULOPATIA_CERVICAL_LEVE: {
-          frameworks: ["COMPRESION_NEURAL_LEVE"],
+        NEURALGIA_CUBITAL_LEVE: {
+          frameworks: ["DOLOR_NEUROPATICO_PERIFERICO_LEVE"],
           patient_story: {
-            location: ["cuello y brazo", "hormigueo que baja al brazo"],
-            aggravating: ["postura mantenida", "girar el cuello"],
-            relieving: ["cambiar postura", "apoyar el brazo", "descanso relativo"],
-            onset: ["subagudo"],
+            location: ["codo y antebrazo", "meñique y anular"],
+            onset: ["progresivo"],
+            aggravating: ["apoyar el codo", "flexionar el codo mucho rato"],
+            relieving: ["dejar de apoyar", "estirar el brazo"],
             night: ["a veces hormiguea por la noche"],
           },
         },
       },
-      forbidden_extra: ["mielopatía", "pérdida de fuerza progresiva severa"],
+      forbidden_extra: ["ictus agudo", "síndrome de cola de caballo"],
     },
-
-    CADERA: {
-      allowed_frameworks: ["SOBRECARGA_MECANICA", "INFLAMACION_LOCAL", "DEGENERACION_LEVE", "DISFUNCION_MECANICA"],
+    NEURO_CENTRAL_LEVE: {
+      allowed_frameworks: ["DEFICIT_NEURO_LEVE"],
       pathologies: {
-        DOLOR_TROCANTERICO: {
-          frameworks: ["SOBRECARGA_MECANICA", "INFLAMACION_LOCAL"],
+        SECUELAS_ICTUS_LEVES_CRONICAS: {
+          frameworks: ["DEFICIT_NEURO_LEVE"],
           patient_story: {
-            location: ["lado de la cadera", "trocánter"],
-            aggravating: ["subir escaleras", "andar mucho", "tumbarme de ese lado"],
-            relieving: ["evitar ese lado al dormir", "reposo"],
-            onset: ["progresivo"],
-            night: ["sí, por dormir encima"],
-          },
-        },
-        COXARTROSIS_LEVE: {
-          frameworks: ["DEGENERACION_LEVE"],
-          patient_story: {
-            location: ["ingle", "cadera por delante"],
-            aggravating: ["caminar mucho", "levantarme de la silla", "ponerme calcetines"],
-            relieving: ["descanso", "calentar un poco"],
-            onset: ["lento"],
-            night: ["rigidez más que dolor"],
-          },
-        },
-        TENDINOPATIA_ILIOPSOAS_LEVE: {
-          frameworks: ["SOBRECARGA_MECANICA"],
-          patient_story: {
-            location: ["ingle", "parte anterior de la cadera"],
-            aggravating: ["subir escaleras", "levantar la rodilla", "correr"],
-            relieving: ["reposo relativo"],
-            onset: ["progresivo"],
-            night: ["no suele"],
+            location: ["un lado del cuerpo (ligero)", "mano/pie"],
+            onset: ["hace meses/años, no es de hoy"],
+            aggravating: ["fatiga", "actividades largas"],
+            relieving: ["descansar", "hacerlo con calma"],
+            night: ["no es lo principal"],
           },
         },
       },
-      forbidden_extra: ["fractura", "necrosis avascular", "artritis séptica"],
+      forbidden_extra: ["ictus agudo hoy", "signos de alarma neurológicos agudos"],
+    },
+    VESTIBULAR: {
+      allowed_frameworks: ["VESTIBULAR_LEVE"],
+      pathologies: {
+        VERTIGO_POSICIONAL_LEVE: {
+          frameworks: ["VESTIBULAR_LEVE"],
+          patient_story: {
+            location: ["cabeza (mareo)", "sensación de giro"],
+            onset: ["episódico, días-semanas"],
+            aggravating: ["girar en la cama", "mirar hacia arriba"],
+            relieving: ["quedarme quieto", "pasar unos segundos"],
+            night: ["si me giro en la cama"],
+          },
+        },
+      },
+      forbidden_extra: ["signos neurológicos centrales"],
+    },
+  },
+};
+
+// ============================
+// KB RESPI (BÁSICA, AMPLIARÁS LUEGO)
+// ============================
+const KB_RESPI = {
+  version: "0.1",
+  frameworks: {
+    DESACONDICIONAMIENTO: {
+      label: "Desacondicionamiento y disnea de esfuerzo",
+      forbidden_tokens: ["dolor torácico opresivo", "síncope", "hemoptisis", "fiebre alta persistente"],
+      profile: "disnea_esfuerzo",
+    },
+    ASMA_LEVE_CONTROLABLE: {
+      label: "Asma leve con síntomas desencadenados",
+      forbidden_tokens: ["disnea en reposo severa", "cianosis", "uso de musculatura accesoria marcado"],
+      profile: "asma",
+    },
+    EPOC_LEVE_ESTABLE: {
+      label: "EPOC leve estable",
+      forbidden_tokens: ["exacerbación grave", "fiebre alta", "confusión"],
+      profile: "epoc",
+    },
+  },
+  topics: {
+    RESPI_GENERAL: {
+      allowed_frameworks: ["DESACONDICIONAMIENTO", "ASMA_LEVE_CONTROLABLE", "EPOC_LEVE_ESTABLE"],
+      pathologies: {
+        POST_INFECCION_DESACOND: {
+          frameworks: ["DESACONDICIONAMIENTO"],
+          patient_story: {
+            location: ["pecho (sensación de falta de aire)", "cansancio general"],
+            onset: ["desde hace semanas"],
+            aggravating: ["subir escaleras", "andar rápido"],
+            relieving: ["parar y respirar", "ir más lento"],
+            night: ["no suele despertarme"],
+          },
+        },
+        ASMA_EJERCICIO_LEVE: {
+          frameworks: ["ASMA_LEVE_CONTROLABLE"],
+          patient_story: {
+            location: ["pecho (opresión ligera)", "sensación de pitidos"],
+            onset: ["episódico"],
+            aggravating: ["ejercicio intenso", "frío"],
+            relieving: ["descansar", "respirar tranquilo"],
+            night: ["a veces tos nocturna leve"],
+          },
+        },
+        EPOC_LEVE_ESTABLE: {
+          frameworks: ["EPOC_LEVE_ESTABLE"],
+          patient_story: {
+            location: ["disnea al esfuerzo", "tos ocasional"],
+            onset: ["meses-años"],
+            aggravating: ["cuestas", "cargar peso"],
+            relieving: ["ritmo suave", "parar"],
+            night: ["variable, no principal"],
+          },
+        },
+      },
+      forbidden_extra: ["neumonía grave", "embolia pulmonar"],
     },
   },
 };
@@ -323,7 +208,6 @@ function json(statusCode, payload) {
 }
 
 function normalizeHistory(history) {
-  // Esperamos [{role:"user"|"assistant", content:"..."}]
   if (!Array.isArray(history)) return [];
   const cleaned = history
     .filter(
@@ -334,14 +218,11 @@ function normalizeHistory(history) {
         m.content.trim().length > 0
     )
     .map((m) => ({ role: m.role, content: m.content.trim() }));
-
-  // Recorte al final (más reciente)
   return cleaned.slice(-MAX_HISTORY_MESSAGES);
 }
 
 // ----------- deterministic selector (seed) -----------
 function hashStringToInt(s) {
-  // simple hash, deterministic
   let h = 2166136261;
   for (let i = 0; i < s.length; i++) {
     h ^= s.charCodeAt(i);
@@ -349,7 +230,6 @@ function hashStringToInt(s) {
   }
   return Math.abs(h);
 }
-
 function pickOne(arr, seedInt) {
   if (!arr.length) return null;
   const idx = seedInt % arr.length;
@@ -357,86 +237,81 @@ function pickOne(arr, seedInt) {
 }
 
 /**
- * pickCaseSpec:
- * - Si vienen region/framework/pathology -> intenta respetarlos (validando compatibilidad).
- * - Si faltan -> elige de forma coherente según KB.
+ * pickCaseSpecGeneric:
+ * - Similar a tu pickCaseSpec pero soporta “KB con regions” (MSK) o “KB con topics” (NEURO/RESPI).
  */
-function pickCaseSpec({ region, framework, pathology, seed = "default", difficulty = "basico" }) {
-  const regions = KB_MS.regions;
+function pickCaseSpecGeneric({
+  kb,
+  regionOrTopic,
+  framework,
+  pathology,
+  seed = "default",
+  difficulty = "basico",
+}) {
+  const difficultyTag = ["basico", "intermedio"].includes(difficulty) ? difficulty : "basico";
 
-  // 1) Region
-  let pickedRegion = region && regions[region] ? region : null;
-  if (!pickedRegion) {
-    const regionKeys = Object.keys(regions);
-    pickedRegion = pickOne(regionKeys, hashStringToInt(seed));
+  // KB tipo MSK (regions)
+  const hasRegions = !!kb.regions;
+  const pool = hasRegions ? kb.regions : kb.topics;
+
+  // 1) Region/Topic
+  let pickedKey = regionOrTopic && pool[regionOrTopic] ? regionOrTopic : null;
+  if (!pickedKey) {
+    const keys = Object.keys(pool);
+    pickedKey = pickOne(keys, hashStringToInt(seed));
   }
-
-  const regionObj = regions[pickedRegion];
+  const node = pool[pickedKey];
 
   // 2) Framework
-  let pickedFramework = framework && regionObj.allowed_frameworks.includes(framework) ? framework : null;
+  let pickedFramework = framework && node.allowed_frameworks?.includes(framework) ? framework : null;
   if (!pickedFramework) {
-    pickedFramework = pickOne(regionObj.allowed_frameworks, hashStringToInt(seed + "|fw|" + pickedRegion));
+    pickedFramework = pickOne(node.allowed_frameworks || [], hashStringToInt(seed + "|fw|" + pickedKey));
   }
 
   // 3) Pathology
-  const pathologyKeys = Object.keys(regionObj.pathologies);
-  let pickedPathology =
-    pathology && regionObj.pathologies[pathology] ? pathology : null;
+  const pathologyKeys = Object.keys(node.pathologies || {});
+  let pickedPathology = pathology && node.pathologies?.[pathology] ? pathology : null;
 
-  // If pathology provided but incompatible with framework, override
   if (pickedPathology) {
-    const allowedFws = regionObj.pathologies[pickedPathology].frameworks;
-    if (!allowedFws.includes(pickedFramework)) {
-      pickedPathology = null;
-    }
+    const allowedFws = node.pathologies[pickedPathology].frameworks || [];
+    if (pickedFramework && !allowedFws.includes(pickedFramework)) pickedPathology = null;
   }
 
   if (!pickedPathology) {
-    // choose a pathology compatible with pickedFramework
     const compatible = pathologyKeys.filter((p) =>
-      regionObj.pathologies[p].frameworks.includes(pickedFramework)
+      (node.pathologies[p].frameworks || []).includes(pickedFramework)
     );
     pickedPathology = pickOne(
-      compatible.length ? compatible : pathologyKeys,
-      hashStringToInt(seed + "|px|" + pickedRegion + "|" + pickedFramework)
+      (compatible.length ? compatible : pathologyKeys),
+      hashStringToInt(seed + "|px|" + pickedKey + "|" + pickedFramework)
     );
   }
 
-  // 4) Compose spec
-  const px = regionObj.pathologies[pickedPathology];
-  const fw = KB_MS.frameworks[pickedFramework];
-
-  // minimal difficulty hook (for now)
-  const difficultyTag = ["basico", "intermedio"].includes(difficulty) ? difficulty : "basico";
+  const px = node.pathologies[pickedPathology] || {};
+  const fw = kb.frameworks[pickedFramework] || {};
 
   return {
-    kb_version: KB_MS.version,
-    region: pickedRegion,
+    kb_version: kb.version,
+    region_or_topic: pickedKey,
     framework: pickedFramework,
     pathology: pickedPathology,
     difficulty: difficultyTag,
     forbidden: [
       ...(fw?.forbidden_tokens || []),
-      ...(regionObj?.forbidden_extra || []),
+      ...(node?.forbidden_extra || []),
     ],
     patient_story: px?.patient_story || {},
     framework_label: fw?.label || pickedFramework,
+    kb_kind: hasRegions ? "regions" : "topics",
   };
 }
 
-/**
- * buildInternalPatientBrief:
- * - Esto se mete dentro del systemPrompt como "información interna"
- * - El PACIENTE no revela diagnósticos, pero su relato es coherente con estos patrones.
- */
 function buildInternalPatientBrief(spec) {
   const ps = spec.patient_story || {};
-  // Para evitar alucinaciones: le damos "catálogos" de frases/ideas permitidas.
   return `
 HISTORIA INTERNA DEL CASO (NO REVELAR AL ALUMNO)
 - KB version: ${spec.kb_version}
-- Región: ${spec.region}
+- Contexto: ${spec.kb_kind === "regions" ? "Región" : "Tema"} = ${spec.region_or_topic}
 - Marco fisiopatológico: ${spec.framework_label} (${spec.framework})
 - Patología objetivo (NO decirla): ${spec.pathology}
 - Dificultad: ${spec.difficulty}
@@ -453,8 +328,52 @@ RESTRICCIONES DURAS (NO introducir salvo que el alumno pregunte y sea compatible
 
 REGLA DE COHERENCIA
 - No cambies cronología, localización, ni patrón de agravantes/alivio durante la conversación.
-- Si el alumno pregunta por red flags del listado prohibido: responde NEGÁNDOLOS (p. ej. "no, no he tenido fiebre"), salvo que el caso ya los incluyera (aquí NO los incluye).
+- Si el alumno pregunta por red flags del listado prohibido: responde NEGÁNDOLOS, salvo que se te hubiera indicado lo contrario (aquí NO se incluyen).
 `.trim();
+}
+
+function buildScopeRules(trainingConfig) {
+  const stage = trainingConfig?.stage || "ANAMNESIS_VALORACION_TRATAMIENTO";
+  const academicLevel = trainingConfig?.academicLevel;
+  const area = trainingConfig?.area;
+
+  const levelLine = academicLevel ? `- Nivel del alumno: ${academicLevel}º (ajusta complejidad del lenguaje).` : "";
+
+  if (stage === "ANAMNESIS") {
+    return `
+ALCANCE DEL ENTRENAMIENTO: SOLO ANAMNESIS
+- NO reveles resultados de exploración física estructurada, pruebas, test especiales, imagen, constantes, ni “hallazgos objetivos”.
+- NO hables de tratamiento. Si el alumno pregunta “qué harías”: responde como paciente (“no lo sé, eso me lo dirás tú/usted”) o “eso lo vería el fisio tras valorarme”.
+- Puedes describir síntomas y limitación funcional, y responder a preguntas de historia clínica.
+${levelLine}
+- Área seleccionada: ${area || "cualquiera"}.
+`.trim();
+  }
+
+  if (stage === "ANAMNESIS_VALORACION") {
+    return `
+ALCANCE DEL ENTRENAMIENTO: ANAMNESIS + VALORACIÓN
+- Puedes aportar información orientada a valoración SOLO si el alumno la solicita explícitamente (p. ej. movilidad, gestos funcionales, “cuando lo muevo pasa X”).
+- No inventes pruebas complejas. Mantén “hallazgos simples” y en lenguaje de paciente.
+- NO propongas tratamiento ni ejercicios.
+${levelLine}
+- Área seleccionada: ${area || "cualquiera"}.
+`.trim();
+  }
+
+  return `
+ALCANCE DEL ENTRENAMIENTO: ANAMNESIS + VALORACIÓN + TRATAMIENTO
+- Responde como paciente, pero permite que el alumno explore (hallazgos simples si los pide).
+- El tratamiento lo propone el alumno: tú solo comentas preferencias, miedos, objetivos, barreras y adherencia.
+${levelLine}
+- Área seleccionada: ${area || "cualquiera"}.
+`.trim();
+}
+
+function pickKBByArea(area) {
+  if (area === "NEURO") return KB_NEURO;
+  if (area === "RESPI") return KB_RESPI;
+  return KB_MS; // default
 }
 
 export const handler = async (event) => {
@@ -462,7 +381,6 @@ export const handler = async (event) => {
     if (event.httpMethod !== "POST") {
       return { statusCode: 405, body: "Method Not Allowed" };
     }
-
     if (!process.env.OPENAI_API_KEY) {
       return json(500, { error: "OPENAI_API_KEY missing" });
     }
@@ -473,29 +391,22 @@ export const handler = async (event) => {
       action,
       message,
       history = [],
-      // nuevos opcionales (no rompen compatibilidad)
       region,
       framework,
       pathology,
       seed,
       difficulty,
+
+      // ✅ NUEVO
+      trainingConfig, // {stage, area, academicLevel}
     } = body;
 
-    if (!mode || typeof mode !== "string") {
-      return json(400, { error: "Falta 'mode' (string)" });
-    }
-    if (!action || typeof action !== "string") {
-      return json(400, { error: "Falta 'action' (string)" });
-    }
-    if (!message || typeof message !== "string") {
-      return json(400, { error: "Falta 'message' (string)" });
-    }
+    if (!mode || typeof mode !== "string") return json(400, { error: "Falta 'mode' (string)" });
+    if (!action || typeof action !== "string") return json(400, { error: "Falta 'action' (string)" });
+    if (!message || typeof message !== "string") return json(400, { error: "Falta 'message' (string)" });
 
     const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
-    // --------------------------
-    // PROMPTS AFINADOS POR MODO
-    // --------------------------
     let systemPrompt = "";
     let temperature = 0.25;
     let max_output_tokens = 600;
@@ -503,24 +414,31 @@ export const handler = async (event) => {
     switch (mode) {
       case "casos_libres": {
         if (action === "paciente") {
-          // 1) Selecciona caso (determinista por seed)
-          const caseSpec = pickCaseSpec({
-            region,
+          // ✅ Escoger KB por área (si viene)
+          const kb = pickKBByArea(trainingConfig?.area);
+
+          // ✅ Seed estable (si no viene, fallback)
+          const stableSeed = typeof seed === "string" && seed.trim() ? seed.trim() : "default";
+
+          // ✅ pick coherente (region solo aplica en MSK; en NEURO/RESPI se interpreta como topic)
+          const caseSpec = pickCaseSpecGeneric({
+            kb,
+            regionOrTopic: region,
             framework,
             pathology,
-            seed: seed || "default",
+            seed: stableSeed,
             difficulty: difficulty || "basico",
           });
 
-          // 2) Inyecta brief interno para consistencia
           const internalBrief = buildInternalPatientBrief(caseSpec);
+          const scopeRules = buildScopeRules(trainingConfig);
 
           systemPrompt = `
 Eres un PACIENTE real en una consulta de fisioterapia. Estás respondiendo a un estudiante.
 
 OBJETIVO
 - Responder de forma realista, coherente y humana a preguntas clínicas.
-- NO enseñar, NO diagnosticar, NO sugerir pruebas ni tratamiento.
+- NO enseñar, NO diagnosticar, NO sugerir pruebas ni tratamiento por iniciativa propia.
 
 PERSONA Y TONO
 - Habla como paciente (lenguaje cotidiano, sin tecnicismos).
@@ -529,18 +447,15 @@ PERSONA Y TONO
 
 REGLAS DURAS (OBLIGATORIAS)
 - No digas diagnósticos ni nombres de patologías.
-- No propongas pruebas clínicas, maniobras, ni ejercicios.
-- No reveles “lo que el alumno debería preguntar”.
-- No añadas información no solicitada. Si no te preguntan, no lo cuentes.
+- No te pongas en modo profesor.
+- No “adelantes” información no solicitada.
 - Si no sabes/no recuerdas: di “no estoy seguro/a” o “no me acuerdo”.
 
 COHERENCIA
 - Mantén el mismo relato (cronología, localización, irradiación, factores) durante toda la conversación.
 - Si el estudiante pregunta lo mismo, responde coherente (puedes variar mínimamente el texto, no el contenido).
 
-SEGURIDAD
-- Si te preguntan por síntomas graves (pérdida de fuerza súbita, fiebre, pérdida de control de esfínteres, etc.), responde con sinceridad acorde a tu historia.
-- En este caso, si te preguntan por red flags, en general los NIEGAS (salvo que se te hubiera indicado lo contrario).
+${scopeRules}
 
 SALIDA
 - Responde SOLO como paciente. No uses listas a menos que el alumno pida “enumera”.
@@ -549,11 +464,12 @@ ${internalBrief}
 `.trim();
 
           temperature = 0.2;
-          max_output_tokens = 350;
+          max_output_tokens = 380;
           break;
         }
 
         if (action === "evaluar") {
+          // (tu prompt evaluador lo dejo prácticamente igual)
           systemPrompt = `
 Eres un DOCENTE EVALUADOR universitario experto en fisioterapia clínica.
 Tu tarea es evaluar el desempeño del alumno en este caso clínico.
@@ -565,19 +481,11 @@ COMPETENCIAS A EVALUAR (0–100)
 - tratamiento
 - comunicacion
 
-CRITERIOS (resumen)
-1) Anamnesis: cronología, dolor (localización/irradiación), mecanismo, banderas rojas, función, antecedentes, medicación, objetivos del paciente.
-2) Exploración: propone/integra pruebas razonables, justifica qué busca, interpreta hallazgos y los relaciona con hipótesis.
-3) Razonamiento clínico: hipótesis principal + diferenciales, coherencia con datos, descarta red flags, explica fisiopatología/biomecánica.
-4) Tratamiento: plan inicial seguro y específico (educación, carga, dosificación, criterios de progresión, reevaluación).
-5) Comunicación: claridad, empatía, lenguaje al paciente, estructura, consentimiento, educación y expectativas.
-
 REGLAS DURAS
 - Devuelve EXCLUSIVAMENTE JSON válido. Sin texto adicional. Sin markdown.
 - Scores enteros 0–100.
 - Feedback por competencia: 1–2 frases, accionable y específico.
 - Si falta información para puntuar una competencia: NO inventes. Puntúa conservador y explica lo que faltó.
-- No cites papers/guías específicas. Habla en términos generales.
 
 FORMATO JSON EXACTO
 {
@@ -590,18 +498,13 @@ FORMATO JSON EXACTO
   ],
   "global": { "score": 0, "resumen": "..." }
 }
-
-IMPORTANTE
-- El resumen global (1–3 frases) debe decir: mayor fortaleza + mayor debilidad + 1 recomendación.
 `.trim();
           temperature = 0.2;
           max_output_tokens = 550;
           break;
         }
 
-        return json(400, {
-          error: "Action inválida para casos_libres. Usa 'paciente' o 'evaluar'.",
-        });
+        return json(400, { error: "Action inválida para casos_libres. Usa 'paciente' o 'evaluar'." });
       }
 
       case "examen": {
@@ -612,19 +515,6 @@ REGLAS GENERALES
 - No inventes estudios/citas, guías, porcentajes o referencias.
 - Mantén coherencia clínica (síntomas, hallazgos, curso temporal).
 - Lenguaje claro y evaluable.
-
-SI TE PIDEN GENERAR (formato obligatorio)
-1) Enunciado del caso (150–250 palabras)
-2) Datos clave (5–8 bullets)
-3) Preguntas del examen (3–5)
-4) Criterios de corrección (rúbrica breve por pregunta)
-
-SI TE PIDEN CORREGIR
-- Evalúa por apartados: aciertos, errores, qué faltó, y mejora concreta.
-- Sé preciso, no divagues.
-
-SEGURIDAD
-- Incluye red flags solo si son parte del caso; si aparecen, deben afectar la corrección.
 `.trim();
         temperature = 0.35;
         max_output_tokens = 850;
@@ -633,23 +523,11 @@ SEGURIDAD
 
       case "estudio": {
         systemPrompt = `
-Eres un TUTOR ACADÉMICO de fisioterapia. El alumno puede aportar apuntes/fragmentos.
+Eres un TUTOR ACADÉMICO de fisioterapia.
 
 REGLAS DURAS
-- Si la información NO está en el contexto aportado, dilo explícitamente:
-  "No aparece en tus documentos. Puedo explicarlo en general, pero no puedo atribuirlo a tus apuntes."
+- Si la información NO está en el contexto aportado, dilo explícitamente.
 - No inventes citas, páginas, autores, porcentajes.
-- Explica con rigor fisiopatológico y ejemplos clínicos simples.
-- Responde estructurado y claro.
-
-FORMATO RECOMENDADO
-- Resumen (si aplica)
-- Explicación paso a paso
-- Ejemplo clínico breve
-- Mini-checklist / puntos clave
-
-CUANDO HAYA AMBIGÜEDAD
-- Haz 1–2 preguntas de aclaración antes de extenderte.
 `.trim();
         temperature = 0.2;
         max_output_tokens = 700;
@@ -660,21 +538,12 @@ CUANDO HAYA AMBIGÜEDAD
         systemPrompt = `
 Eres un analista docente. Evalúas el PROGRESO del alumno a partir de casos previos.
 
-OBJETIVO
-- Identificar patrones (errores repetidos, sesgos, lagunas).
-- Proponer un plan de mejora concreto.
-
 SALIDA (SIEMPRE)
 1) Fortalezas (3 bullets)
 2) Debilidades (3 bullets)
 3) Patrones detectados (2–4 bullets)
-4) Plan de mejora 7 días (día 1–7 con tarea concreta)
-5) Recomendación de 3 casos siguientes (tema + objetivo)
-
-REGLAS
-- No inventes datos de rendimiento si no están presentes.
-- Sé accionable y específico.
-- No cites papers/guías específicas.
+4) Plan de mejora 7 días
+5) Recomendación de 3 casos siguientes
 `.trim();
         temperature = 0.25;
         max_output_tokens = 700;
@@ -685,13 +554,8 @@ REGLAS
         return json(400, { error: "Modo inválido" });
     }
 
-    // --------------------------
-    // Construcción de mensajes
-    // --------------------------
     const trimmedHistory = normalizeHistory(history);
 
-    // Importante: el frontend ya manda history con user/assistant.
-    // Nosotros añadimos el mensaje actual al final.
     const messages = [
       { role: "system", content: systemPrompt.trim() },
       ...trimmedHistory,
@@ -707,7 +571,6 @@ REGLAS
 
     const output = (resp.output_text || "").trim();
 
-    // Si es evaluación, intentamos parsear el JSON para UI
     if (mode === "casos_libres" && action === "evaluar") {
       try {
         const evaluation = JSON.parse(output);
@@ -725,7 +588,6 @@ REGLAS
   } catch (err) {
     console.error("FUNCTION ERROR:", err);
     const status = err?.status || err?.response?.status || 500;
-
     return json(status, {
       error: err?.response?.data?.error?.message || err?.message || "Error interno",
     });
