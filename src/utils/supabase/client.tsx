@@ -1,6 +1,19 @@
 // Cliente de Supabase - Conectado al backend
 import { projectId, publicAnonKey } from './info.tsx';
 
+export type TrainingStage =
+  | 'ANAMNESIS'
+  | 'ANAMNESIS_VALORACION'
+  | 'ANAMNESIS_VALORACION_TRATAMIENTO';
+
+export type ClinicalArea = 'MSK' | 'NEURO' | 'RESPI';
+
+export type TrainingConfig = {
+  stage: TrainingStage;
+  area?: ClinicalArea;
+  academicLevel?: '1' | '2' | '3' | '4';
+};
+
 export type CaseData = {
   id: string;
   patientName: string;
@@ -9,6 +22,9 @@ export type CaseData = {
   chiefComplaint: string;
   pathology: string;
   date: string;
+
+  trainingConfig?: TrainingConfig; // ✅ NUEVO
+
   evaluation?: {
     anamnesis: number;
     exploracion: number;
@@ -40,7 +56,7 @@ const getHeaders = () => {
 const getAnonHeaders = () => {
   return {
     'Content-Type': 'application/json',
-    'Authorization': `Bearer ${publicAnonKey}`,
+    Authorization: `Bearer ${publicAnonKey}`,
   };
 };
 
@@ -49,7 +65,7 @@ const getAuthHeaders = () => {
   const accessToken = localStorage.getItem('fisiomind_access_token');
   return {
     'Content-Type': 'application/json',
-    'Authorization': `Bearer ${accessToken || publicAnonKey}`,
+    Authorization: `Bearer ${accessToken || publicAnonKey}`,
   };
 };
 
@@ -61,13 +77,16 @@ const getUserId = (): string | null => {
 // ============ FUNCIONES DE AUTENTICACIÓN ============
 
 // Login con Supabase Auth
-export const login = async (email: string, password: string): Promise<{ userId: string; userName: string; accessToken: string } | null> => {
+export const login = async (
+  email: string,
+  password: string
+): Promise<{ userId: string; userName: string; accessToken: string } | null> => {
   try {
     const response = await fetch(`${SERVER_URL}/auth/login`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${publicAnonKey}`,
+        Authorization: `Bearer ${publicAnonKey}`,
       },
       body: JSON.stringify({ email, password }),
     });
@@ -75,32 +94,34 @@ export const login = async (email: string, password: string): Promise<{ userId: 
     if (!response.ok) {
       const error = await response.json();
       console.error('Login error:', error);
-      // Lanzar error con mensaje del servidor para que AuthScreen lo capture
       throw new Error(error.error || 'Error al iniciar sesión');
     }
 
     const data = await response.json();
-    
-    // Guardar sesión en localStorage
+
     localStorage.setItem('fisiomind_user_id', data.userId);
     localStorage.setItem('fisiomind_user_name', data.userName);
     localStorage.setItem('fisiomind_access_token', data.accessToken);
-    
+
     return data;
   } catch (error) {
     console.error('Error in login:', error);
-    throw error; // Propagar el error para que AuthScreen lo maneje
+    throw error;
   }
 };
 
 // Signup con Supabase Auth
-export const signup = async (email: string, password: string, name: string): Promise<{ userId: string; userName: string; accessToken: string }> => {
+export const signup = async (
+  email: string,
+  password: string,
+  name: string
+): Promise<{ userId: string; userName: string; accessToken: string }> => {
   try {
     const response = await fetch(`${SERVER_URL}/auth/signup`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${publicAnonKey}`,
+        Authorization: `Bearer ${publicAnonKey}`,
       },
       body: JSON.stringify({ email, password, name }),
     });
@@ -111,12 +132,11 @@ export const signup = async (email: string, password: string, name: string): Pro
     }
 
     const data = await response.json();
-    
-    // Guardar sesión en localStorage
+
     localStorage.setItem('fisiomind_user_id', data.userId);
     localStorage.setItem('fisiomind_user_name', name);
     localStorage.setItem('fisiomind_access_token', data.accessToken);
-    
+
     return { userId: data.userId, userName: name, accessToken: data.accessToken };
   } catch (error) {
     console.error('Error in signup:', error);
@@ -129,11 +149,11 @@ export const checkSession = async (): Promise<{ userId: string; userName: string
   const userId = localStorage.getItem('fisiomind_user_id');
   const userName = localStorage.getItem('fisiomind_user_name');
   const accessToken = localStorage.getItem('fisiomind_access_token');
-  
+
   if (!userId || !accessToken) {
     return null;
   }
-  
+
   return { userId, userName: userName || 'Estudiante' };
 };
 
@@ -182,7 +202,7 @@ export const getCompletedCases = async (): Promise<CaseData[]> => {
     }
 
     console.log(`Fetching cases for userId: ${userId}`);
-    
+
     const response = await fetch(`${SERVER_URL}/cases/get?userId=${userId}`, {
       method: 'GET',
       headers: getAnonHeaders(),
@@ -203,14 +223,15 @@ export const getCompletedCases = async (): Promise<CaseData[]> => {
   }
 };
 
-// Generar un nuevo caso clínico
-export const generateNewCase = async (): Promise<CaseData> => {
+// ✅ Generar un nuevo caso clínico (con trainingConfig)
+export const generateNewCase = async (trainingConfig: TrainingConfig): Promise<CaseData> => {
   try {
-    console.log('Generating new case...');
-    
+    console.log('Generating new case...', trainingConfig);
+
     const response = await fetch(`${SERVER_URL}/cases/generate`, {
       method: 'POST',
       headers: getAnonHeaders(),
+      body: JSON.stringify({ trainingConfig }), // ✅ se envía (aunque el server lo ignore, no rompe)
     });
 
     if (!response.ok) {
@@ -221,7 +242,11 @@ export const generateNewCase = async (): Promise<CaseData> => {
 
     const data = await response.json();
     console.log(`✓ Case generated: ${data.case?.patientName}`);
-    return data.case;
+
+    return {
+      ...data.case,
+      trainingConfig, // ✅ lo guardamos en el case
+    };
   } catch (error) {
     console.error('Error generating case:', error);
     throw error;
@@ -239,11 +264,11 @@ export const generateAIResponse = async (
     const response = await fetch(`${SERVER_URL}/ai/response`, {
       method: 'POST',
       headers: getAnonHeaders(),
-      body: JSON.stringify({ 
-        message, 
-        caseData, 
+      body: JSON.stringify({
+        message,
+        caseData,
         chatHistory,
-        isExamMode 
+        isExamMode,
       }),
     });
 
@@ -288,7 +313,7 @@ export const generateAIEvaluation = async (
 export const generateExamCase = async (): Promise<any> => {
   try {
     console.log('Generating exam case...');
-    
+
     const response = await fetch(`${SERVER_URL}/exam/generate`, {
       method: 'POST',
       headers: getAnonHeaders(),
@@ -345,7 +370,7 @@ export const getCompletedExamCases = async (): Promise<any[]> => {
     }
 
     console.log(`Fetching exam cases for userId: ${userId}`);
-    
+
     const response = await fetch(`${SERVER_URL}/exam/get?userId=${userId}`, {
       method: 'GET',
       headers: getAnonHeaders(),
