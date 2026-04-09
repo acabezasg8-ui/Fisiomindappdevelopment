@@ -906,6 +906,7 @@ function buildHiddenCaseModel(spec, trainingConfig = {}) {
     "Nuria",
     "David",
   ];
+
   const professions = [
     "estudiante",
     "administrativo",
@@ -923,6 +924,7 @@ function buildHiddenCaseModel(spec, trainingConfig = {}) {
     spec.typical_irritability,
     hashStringToInt(seedBase + "|irrit")
   );
+
   const severity =
     irritability === "alta"
       ? pickOne(["media", "alta"], seedInt + 17)
@@ -972,6 +974,36 @@ function buildHiddenCaseModel(spec, trainingConfig = {}) {
     painProfile: spec.pain_profile,
   });
 
+  const initialHypotheses = buildInitialHypotheses({
+    region: spec.region_or_topic,
+    framework: spec.framework,
+    pathology: spec.pathology,
+    painProfile: spec.pain_profile,
+  });
+
+  const supportRefute = buildSupportAndRefuteData({
+    region: spec.region_or_topic,
+    pathology: spec.pathology,
+    painProfile: spec.pain_profile,
+    irritability,
+    functionLimitation,
+  });
+
+  const usefulExamDirections = buildUsefulExamDirections({
+    region: spec.region_or_topic,
+    painProfile: spec.pain_profile,
+    irritability,
+  });
+
+  const functionalDiagnosis = buildFunctionalDiagnosis({
+    region: spec.region_or_topic,
+    pathology: spec.pathology,
+    painProfile: spec.pain_profile,
+    irritability,
+    severity,
+    functionLimitation,
+  });
+
   return {
     patient_identity: {
       name: pickOne(patientNames, seedInt + 100),
@@ -996,6 +1028,13 @@ function buildHiddenCaseModel(spec, trainingConfig = {}) {
       expectation,
       forbidden: spec.forbidden,
       difficulty: spec.difficulty,
+    },
+    reasoning_engine: {
+      initial_hypotheses: initialHypotheses,
+      data_that_support: supportRefute.supports,
+      data_that_refute: supportRefute.refutes,
+      useful_exam_directions: usefulExamDirections,
+      functional_diagnosis: functionalDiagnosis,
     },
     objective_hints: objectiveHints,
   };
@@ -1097,7 +1136,158 @@ function buildObjectiveHints({
     },
   };
 }
+function buildInitialHypotheses({ region, framework, pathology, painProfile }) {
+  const hypotheses = [];
 
+  const add = (label, kind, probability) => {
+    hypotheses.push({ label, kind, probability });
+  };
+
+  // Hipótesis principal
+  add(pathology, "principal", "alta");
+
+  // Hipótesis secundarias por patrón
+  if (painProfile.includes("neural")) {
+    add("Componente neural periférico leve", "secundaria", "media");
+    add("Disfunción mecánica con sensibilización local", "secundaria", "baja");
+  } else if (painProfile.includes("inflamatorio")) {
+    add("Irritación inflamatoria local", "secundaria", "media");
+    add("Sobrecarga mecánica reactiva", "secundaria", "baja");
+  } else {
+    add("Disfunción mecánica regional", "secundaria", "media");
+    add("Sobrecarga tisular local", "secundaria", "media");
+  }
+
+  // Hipótesis por región
+  if (region === "HOMBRO") {
+    add("Dolor subacromial mecánico", "alternativa", "media");
+    add("Déficit de control escapulohumeral", "alternativa", "baja");
+  }
+
+  if (region === "LUMBAR") {
+    add("Lumbalgia mecánica inespecífica", "alternativa", "media");
+    if (painProfile.includes("neural")) {
+      add("Radiculopatía lumbar leve", "alternativa", "media");
+    }
+  }
+
+  if (region === "CERVICAL") {
+    add("Cervicalgia mecánica postural", "alternativa", "media");
+    if (painProfile.includes("neural")) {
+      add("Radiculopatía cervical leve", "alternativa", "media");
+    }
+  }
+
+  if (region === "RODILLA") {
+    add("Dolor femoropatelar mecánico", "alternativa", "media");
+    add("Sobrecarga del aparato extensor", "alternativa", "baja");
+  }
+
+  if (region === "TOBILLO_PIE") {
+    add("Sobrecarga mecánica del pie o tobillo", "alternativa", "media");
+    add("Déficit de control o estabilidad regional", "alternativa", "baja");
+  }
+
+  if (region === "CADERA") {
+    add("Dolor lateral o anterior de cadera mecánico", "alternativa", "media");
+    add("Déficit de control lumbopélvico", "alternativa", "baja");
+  }
+
+  return hypotheses.slice(0, 5);
+}
+
+function buildSupportAndRefuteData({ region, pathology, painProfile, irritability, functionLimitation }) {
+  const supports = [];
+  const refutes = [];
+
+  supports.push("La conducta del síntoma encaja con el patrón dominante del caso.");
+  supports.push("La limitación funcional es coherente con la región afectada.");
+  supports.push("La cronología y los agravantes apoyan una hipótesis musculoesquelética plausible.");
+
+  if (painProfile.includes("neural")) {
+    supports.push("La presencia de irradiación u hormigueo apoyaría un componente neural leve.");
+    refutes.push("La ausencia total de síntomas irradiados o sensitivos debilitaría la hipótesis neural.");
+  }
+
+  if (painProfile.includes("inflamatorio")) {
+    supports.push("La irritabilidad media-alta y la sensibilidad con carga apoyarían irritación local.");
+    refutes.push("La clara dependencia mecánica sin irritabilidad debilitaría el componente inflamatorio.");
+  }
+
+  if (irritability === "alta") {
+    supports.push("La fácil provocación del síntoma sugiere un cuadro más reactivo o irritable.");
+    refutes.push("Si tolera carga y repetición sin cambio relevante, la hipótesis actual pierde fuerza.");
+  }
+
+  if (region === "HOMBRO") {
+    supports.push("El dolor al elevar el brazo o en tareas por encima de la cabeza reforzaría la hipótesis principal.");
+    refutes.push("La movilidad totalmente libre y sin dolor en carga debilitaría una hipótesis de hombro mecánico.");
+  }
+
+  if (region === "LUMBAR") {
+    supports.push("El cambio por sedestación, flexión o carga apoya una hipótesis lumbar mecánica.");
+    refutes.push("La falta total de relación con postura o movimiento debilitaría el cuadro lumbar mecánico.");
+  }
+
+  if (region === "RODILLA") {
+    supports.push("La reproducción con escaleras, sentadilla o carga funcional refuerza hipótesis de rodilla mecánica.");
+    refutes.push("La ausencia de síntomas con carga funcional debilitaría la hipótesis principal.");
+  }
+
+  if (functionLimitation?.length) {
+    supports.push(`La limitación funcional principal (${functionLimitation[0]}) encaja con la presentación.`);
+  }
+
+  refutes.push("Los red flags claros o una incoherencia mayor cambiarían por completo la prioridad clínica.");
+
+  return {
+    supports: supports.slice(0, 5),
+    refutes: refutes.slice(0, 5),
+  };
+}
+
+function buildUsefulExamDirections({ region, painProfile, irritability }) {
+  const exam = [];
+
+  exam.push("Confirmar comportamiento del dolor con movimiento, postura, carga y repetición.");
+  exam.push("Comparar qué hallazgos apoyan la hipótesis principal y cuáles la debilitan.");
+
+  if (region === "HOMBRO") {
+    exam.push("Explorar elevación activa, rango doloroso, tolerancia en carga y función escapular.");
+  }
+  if (region === "LUMBAR") {
+    exam.push("Explorar cambio con flexión, extensión, sedestación, marcha y posibles síntomas irradiados.");
+  }
+  if (region === "CERVICAL") {
+    exam.push("Explorar movilidad cervical, relación con brazo, postura y carga mantenida.");
+  }
+  if (region === "RODILLA") {
+    exam.push("Explorar tareas funcionales como sentadilla, escalón, marcha y tolerancia a flexión.");
+  }
+  if (region === "TOBILLO_PIE") {
+    exam.push("Explorar apoyo, marcha, puntillas, control y movimientos que cargan la zona.");
+  }
+  if (region === "CADERA") {
+    exam.push("Explorar marcha, apoyo unipodal, subir escaleras y flexión funcional.");
+  }
+
+  if (painProfile.includes("neural")) {
+    exam.push("Explorar con intención la presencia de irradiación, hormigueo o cambios sensitivos leves.");
+  }
+
+  if (irritability === "alta") {
+    exam.push("Dosificar la exploración: poca carga, evitar exceso de provocación y priorizar seguridad.");
+  }
+
+  return exam.slice(0, 5);
+}
+
+function buildFunctionalDiagnosis({ region, pathology, painProfile, irritability, severity, functionLimitation }) {
+  const regionText = String(region || "región no especificada").toLowerCase();
+  const limitationText = functionLimitation?.[0] || "actividad funcional relevante";
+
+  return `Cuadro ${painProfile} en ${regionText}, con irritabilidad ${irritability}, severidad ${severity} y limitación principal en ${limitationText}. La etiqueta anatómica oculta compatible es ${pathology}, pero la conclusión útil es funcional y basada en comportamiento del síntoma, carga y función.`;
+}
 /**
  * =========================================================
  * Prompts
@@ -1174,6 +1364,22 @@ Severidad: ${hiddenCase.case_core.severity}
 Irritabilidad: ${hiddenCase.case_core.irritability}
 Preocupación psicosocial: ${hiddenCase.case_core.psychosocial || "ninguna muy marcada"}
 Expectativa: ${hiddenCase.case_core.expectation || "quiere mejorar"}
+
+=== RAZONAMIENTO CLÍNICO OCULTO ===
+Hipótesis iniciales:
+${JSON.stringify(hiddenCase.reasoning_engine.initial_hypotheses || [], null, 2)}
+
+Datos que apoyarían la hipótesis principal:
+${JSON.stringify(hiddenCase.reasoning_engine.data_that_support || [], null, 2)}
+
+Datos que la debilitarían:
+${JSON.stringify(hiddenCase.reasoning_engine.data_that_refute || [], null, 2)}
+
+Direcciones útiles de exploración:
+${JSON.stringify(hiddenCase.reasoning_engine.useful_exam_directions || [], null, 2)}
+
+Diagnóstico funcional interno:
+${hiddenCase.reasoning_engine.functional_diagnosis || "no especificado"}
 
 === HALLAZGOS OBJETIVOS SI EL ALUMNO LOS PIDE ===
 Inspección: ${hiddenCase.objective_hints.inspection}
