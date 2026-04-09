@@ -1613,7 +1613,7 @@ export const PATHOLOGY_FRAMEWORKS = {
         name: "Hipercifosis torácica postural",
         ageRange: [15, 65],
         genderDistribution: { masculino: 50, femenino: 50 },
-        ocupations: ["estudiante", "oficinista", "cualquier ocupación sedentaria"],
+        occupations: ["estudiante", "oficinista", "cualquier ocupación sedentaria"],
         chiefComplaints: [
           "Espalda encorvada y redondeada",
           "Dolor entre los omóplatos",
@@ -1861,7 +1861,7 @@ export const PATHOLOGY_FRAMEWORKS = {
         name: "Desplazamiento discal ATM sin reducción (bloqueo cerrado)",
         ageRange: [25, 50],
         genderDistribution: { masculino: 30, femenino: 70 },
-        occupaciones: ["cualquier ocupación", "historia previa de clicks"],
+        occupations: ["cualquier ocupación", "historia previa de clicks"],
         chiefComplaints: [
           "De repente no puedo abrir bien la boca",
           "Limitación súbita de apertura mandibular",
@@ -2087,7 +2087,7 @@ export const PATHOLOGY_FRAMEWORKS = {
         name: "Esguince de ligamento lateral externo rodilla (grado II)",
         ageRange: [18, 40],
         genderDistribution: { masculino: 70, femenino: 30 },
-        ocupations: ["futbolista", "esquiador", "jugador rugby", "deportista contacto"],
+        occupations: ["futbolista", "esquiador", "jugador rugby", "deportista contacto"],
         chiefComplaints: [
           "Dolor en el lateral externo de la rodilla tras un golpe",
           "Sensación de inestabilidad lateral de la rodilla",
@@ -2153,7 +2153,7 @@ export const PATHOLOGY_FRAMEWORKS = {
         name: "Condropatía condral rodilla post-traumática",
         ageRange: [20, 45],
         genderDistribution: { masculino: 65, femenino: 35 },
-        ocupations: ["futbolista", "esquiador", "deportista contacto", "traumatismo previo"],
+        occupations: ["futbolista", "esquiador", "deportista contacto", "traumatismo previo"],
         chiefComplaints: [
           "Dolor profundo en la rodilla tras una lesión",
           "Hinchazón recurrente de la rodilla",
@@ -2263,45 +2263,249 @@ export const PATHOLOGY_FRAMEWORKS = {
   }
 };
 
+// Función auxiliar para elegir un elemento aleatorio
+function pickRandom<T>(items: T[]): T {
+  return items[Math.floor(Math.random() * items.length)];
+}
+
+// Función auxiliar para generar entero dentro de rango
+function randomInt(min: number, max: number): number {
+  const safeMin = Math.ceil(min);
+  const safeMax = Math.floor(max);
+  return Math.floor(Math.random() * (safeMax - safeMin + 1)) + safeMin;
+}
+
+// Convierte semanas decimales en texto temporal más útil
+function formatChronology(weeks: number): string {
+  if (weeks < 1) {
+    const days = Math.max(1, Math.round(weeks * 7));
+    return `${days} días`;
+  }
+  if (weeks < 5) {
+    return `${Math.round(weeks)} semanas`;
+  }
+  const months = Math.max(1, Math.round(weeks / 4));
+  if (months < 12) {
+    return `${months} meses`;
+  }
+  const years = Math.max(1, Math.round(months / 12));
+  return `${years} años`;
+}
+
+// Soporta occupations y también ocupations
+function getOccupations(pathology: any): string[] {
+  if (Array.isArray(pathology.occupations) && pathology.occupations.length > 0) {
+    return pathology.occupations;
+  }
+  if (Array.isArray(pathology.ocupations) && pathology.ocupations.length > 0) {
+    return pathology.ocupations;
+  }
+  return ['cualquier ocupación'];
+}
+
+function inferSeverity(pathologyName: string, onsetType: string): 'leve' | 'moderada' | 'alta' {
+  const text = `${pathologyName} ${onsetType}`.toLowerCase();
+
+  if (
+    text.includes('fractura') ||
+    text.includes('rotura') ||
+    text.includes('luxación') ||
+    text.includes('luxacion') ||
+    text.includes('bloqueo') ||
+    text.includes('agudo') ||
+    text.includes('latigazo')
+  ) {
+    return 'alta';
+  }
+
+  if (
+    text.includes('hernia') ||
+    text.includes('radiculopat') ||
+    text.includes('capsulitis') ||
+    text.includes('artrosis') ||
+    text.includes('estenosis') ||
+    text.includes('esguince')
+  ) {
+    return 'moderada';
+  }
+
+  return 'leve';
+}
+
+function inferIrritability(
+  onsetType: string,
+  aggravatingFactors: string[]
+): 'baja' | 'media' | 'alta' {
+  const text = `${onsetType} ${aggravatingFactors.join(' ')}`.toLowerCase();
+
+  if (
+    text.includes('agudo') ||
+    text.includes('súbito') ||
+    text.includes('subito') ||
+    text.includes('traumát') ||
+    text.includes('traumat') ||
+    text.includes('todos los movimientos') ||
+    text.includes('cualquier movimiento')
+  ) {
+    return 'alta';
+  }
+
+  if (
+    text.includes('sobrecarga') ||
+    text.includes('repetitiva') ||
+    text.includes('progresivo') ||
+    text.includes('gradual')
+  ) {
+    return 'media';
+  }
+
+  return 'baja';
+}
+
+function inferPainProfile(pathologyName: string, aggravatingFactors: string[]): string {
+  const text = `${pathologyName} ${aggravatingFactors.join(' ')}`.toLowerCase();
+
+  if (
+    text.includes('radiculopat') ||
+    text.includes('túnel carpiano') ||
+    text.includes('tunel carpiano') ||
+    text.includes('desfiladero') ||
+    text.includes('hormigueo') ||
+    text.includes('quemazón') ||
+    text.includes('quemazon')
+  ) {
+    return 'neural';
+  }
+
+  if (
+    text.includes('artritis') ||
+    text.includes('anquilosante') ||
+    text.includes('sinovitis') ||
+    text.includes('capsulitis')
+  ) {
+    return 'inflamatorio_mixto';
+  }
+
+  return 'mecanico';
+}
+
+function buildFunctionalLimitations(
+  chiefComplaint: string,
+  aggravatingFactors: string[]
+): string[] {
+  const text = `${chiefComplaint} ${aggravatingFactors.join(' ')}`.toLowerCase();
+  const limitations: string[] = [];
+
+  if (text.includes('escaleras')) limitations.push('subir o bajar escaleras');
+  if (text.includes('sentado') || text.includes('sedestación') || text.includes('sedestacion')) {
+    limitations.push('estar sentado mucho rato');
+  }
+  if (text.includes('overhead') || text.includes('altura') || text.includes('levantar el brazo')) {
+    limitations.push('alcanzar objetos en alto');
+  }
+  if (text.includes('caminar') || text.includes('apoyo')) limitations.push('caminar con normalidad');
+  if (text.includes('correr')) limitations.push('correr o hacer deporte');
+  if (text.includes('mastic')) limitations.push('masticar con normalidad');
+  if (text.includes('noche') || text.includes('dormir')) limitations.push('dormir cómodo');
+  if (
+    text.includes('ordenador') ||
+    text.includes('móvil') ||
+    text.includes('movil') ||
+    text.includes('teclear')
+  ) {
+    limitations.push('trabajar con ordenador o usar la mano repetidamente');
+  }
+
+  if (limitations.length === 0) {
+    limitations.push('hacer sus actividades diarias con normalidad');
+  }
+
+  return [...new Set(limitations)].slice(0, 3);
+}
+
+function generatePatientName(gender: string): string {
+  const maleNames = [
+    'Carlos', 'Javier', 'Miguel', 'Antonio', 'José', 'Francisco', 'Manuel',
+    'David', 'Alejandro', 'Pablo', 'Jorge', 'Fernando', 'Luis', 'Pedro', 'Ángel'
+  ];
+
+  const femaleNames = [
+    'María', 'Carmen', 'Isabel', 'Ana', 'Laura', 'Lucía', 'Marta',
+    'Elena', 'Sara', 'Paula', 'Cristina', 'Rosa', 'Pilar', 'Teresa', 'Raquel'
+  ];
+
+  const lastNames = [
+    'García', 'Rodríguez', 'González', 'Fernández', 'López', 'Martínez',
+    'Sánchez', 'Pérez', 'Gómez', 'Martín', 'Jiménez', 'Ruiz', 'Hernández',
+    'Díaz', 'Moreno', 'Álvarez', 'Romero', 'Torres', 'Ramírez', 'Gil'
+  ];
+
+  const firstName =
+    gender === 'Masculino' ? pickRandom(maleNames) : pickRandom(femaleNames);
+
+  return `${firstName} ${pickRandom(lastNames)}`;
+}
+
+function generateInitialPatientLine(patientName: string, chiefComplaint: string): string {
+  const intros = [
+    `Hola, soy ${patientName}.`,
+    `Buenas, me llamo ${patientName}.`,
+    `Hola, soy ${patientName} y vengo porque...`,
+  ];
+
+  return `${pickRandom(intros)} ${chiefComplaint}.`;
+}
+
 // Función para generar un caso aleatorio basado en una patología
 export function generateCaseFromTemplate(frameworkKey: string, pathologyIndex?: number) {
   const framework = PATHOLOGY_FRAMEWORKS[frameworkKey];
   if (!framework) return null;
 
-  // Seleccionar patología aleatoria o específica
-  const selectedPathology = pathologyIndex !== undefined 
-    ? framework.pathologies[pathologyIndex]
-    : framework.pathologies[Math.floor(Math.random() * framework.pathologies.length)];
+  const selectedPathology =
+    pathologyIndex !== undefined
+      ? framework.pathologies[pathologyIndex]
+      : pickRandom(framework.pathologies);
 
-  // Generar variables aleatorias
-  const age = Math.floor(Math.random() * (selectedPathology.ageRange[1] - selectedPathology.ageRange[0] + 1)) + selectedPathology.ageRange[0];
-  
-  // Determinar género basado en distribución
+  if (!selectedPathology) return null;
+
+  const age = randomInt(
+    selectedPathology.ageRange[0],
+    selectedPathology.ageRange[1]
+  );
+
   const genderRoll = Math.random() * 100;
-  const gender = genderRoll < selectedPathology.genderDistribution.femenino ? 'Femenino' : 'Masculino';
-  
-  // Nombres españoles aleatorios
-  const maleNames = ['Carlos', 'Javier', 'Miguel', 'Antonio', 'José', 'Francisco', 'Manuel', 'David', 'Alejandro', 'Pablo', 'Jorge', 'Fernando', 'Luis', 'Pedro', 'Ángel'];
-  const femaleNames = ['María', 'Carmen', 'Isabel', 'Ana', 'Laura', 'Lucía', 'Marta', 'Elena', 'Sara', 'Paula', 'Cristina', 'Rosa', 'Pilar', 'Teresa', 'Raquel'];
-  const lastNames = ['García', 'Rodríguez', 'González', 'Fernández', 'López', 'Martínez', 'Sánchez', 'Pérez', 'Gómez', 'Martín', 'Jiménez', 'Ruiz', 'Hernández', 'Díaz', 'Moreno', 'Álvarez', 'Romero', 'Torres', 'Ramírez', 'Gil'];
-  
-  const firstName = gender === 'Masculino' 
-    ? maleNames[Math.floor(Math.random() * maleNames.length)]
-    : femaleNames[Math.floor(Math.random() * femaleNames.length)];
-  const lastName = lastNames[Math.floor(Math.random() * lastNames.length)];
-  const patientName = `${firstName} ${lastName}`;
-  
-  // Seleccionar queja principal aleatoria
-  const chiefComplaint = selectedPathology.chiefComplaints[Math.floor(Math.random() * selectedPathology.chiefComplaints.length)];
-  
-  // Seleccionar ocupación aleatoria
-  const occupation = selectedPathology.occupations[Math.floor(Math.random() * selectedPathology.occupations.length)];
-  
-  // Generar cronología aleatoria dentro del rango
-  const chronologyWeeks = Math.floor(Math.random() * (selectedPathology.chronology[1] - selectedPathology.chronology[0] + 1)) + selectedPathology.chronology[0];
-  
-  // Seleccionar tipo de inicio aleatorio
-  const onsetType = selectedPathology.onsetTypes[Math.floor(Math.random() * selectedPathology.onsetTypes.length)];
+  const gender =
+    genderRoll < selectedPathology.genderDistribution.femenino
+      ? 'Femenino'
+      : 'Masculino';
+
+  const patientName = generatePatientName(gender);
+  const chiefComplaint = pickRandom(selectedPathology.chiefComplaints);
+  const occupations = getOccupations(selectedPathology);
+  const occupation = pickRandom(occupations);
+
+  const chronologyWeeksRaw =
+    Math.random() *
+      (selectedPathology.chronology[1] - selectedPathology.chronology[0]) +
+    selectedPathology.chronology[0];
+
+  const chronologyWeeks = Number(chronologyWeeksRaw.toFixed(1));
+  const chronologyLabel = formatChronology(chronologyWeeks);
+
+  const onsetType = pickRandom(selectedPathology.onsetTypes);
+  const aggravatingFactors = selectedPathology.aggravatingFactors || [];
+  const relievingFactors = selectedPathology.relievingFactors || [];
+  const physicalFindings = selectedPathology.physicalFindings || {};
+
+  const severity = inferSeverity(selectedPathology.name, onsetType);
+  const irritability = inferIrritability(onsetType, aggravatingFactors);
+  const painProfile = inferPainProfile(selectedPathology.name, aggravatingFactors);
+  const functionalLimitations = buildFunctionalLimitations(
+    chiefComplaint,
+    aggravatingFactors
+  );
+
+  const initialPatientLine = generateInitialPatientLine(patientName, chiefComplaint);
 
   return {
     id: Date.now().toString(),
@@ -2313,14 +2517,22 @@ export function generateCaseFromTemplate(frameworkKey: string, pathologyIndex?: 
     chiefComplaint,
     pathology: selectedPathology.name,
     framework: framework.name,
-    
-    // Información adicional para la IA (no visible inicialmente al estudiante)
+
+    // mensaje inicial usable directamente si quieres
+    initialPatientLine,
+
+    // información clínica interna para motor IA
     clinicalDetails: {
       onsetType,
       chronologyWeeks,
-      aggravatingFactors: selectedPathology.aggravatingFactors,
-      relievingFactors: selectedPathology.relievingFactors,
-      physicalFindings: selectedPathology.physicalFindings
+      chronologyLabel,
+      aggravatingFactors,
+      relievingFactors,
+      physicalFindings,
+      severity,
+      irritability,
+      painProfile,
+      functionalLimitations,
     }
   };
 }
@@ -2332,7 +2544,7 @@ export function generateCaseFromFramework(frameworkKey: string) {
 
 // Función para obtener todos los marcos disponibles
 export function getAllFrameworks() {
-  return Object.keys(PATHOLOGY_FRAMEWORKS).map(key => ({
+  return Object.keys(PATHOLOGY_FRAMEWORKS).map((key) => ({
     key,
     name: PATHOLOGY_FRAMEWORKS[key].name,
     pathologyCount: PATHOLOGY_FRAMEWORKS[key].pathologies.length
