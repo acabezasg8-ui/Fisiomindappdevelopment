@@ -268,7 +268,11 @@ const KB_MS = {
           },
         },
       },
-      forbidden_extra: ["rotura LCA completa", "artritis séptica", "derrame masivo"],
+      forbidden_extra: [
+        "rotura LCA completa",
+        "artritis séptica",
+        "derrame masivo",
+      ],
     },
 
     TOBILLO_PIE: {
@@ -430,7 +434,11 @@ const KB_MS = {
           patient_story: {
             location: ["cuello y brazo", "hormigueo que baja al brazo"],
             aggravating: ["postura mantenida", "girar el cuello"],
-            relieving: ["cambiar postura", "apoyar el brazo", "descanso relativo"],
+            relieving: [
+              "cambiar postura",
+              "apoyar el brazo",
+              "descanso relativo",
+            ],
             onset: ["subagudo"],
             night: ["a veces hormiguea por la noche"],
             function: [
@@ -798,6 +806,308 @@ function getPoolFromKB(kb) {
 
 /**
  * =========================================================
+ * Initial patient line helpers
+ * =========================================================
+ */
+function normalizePainTypeForInitialLine(painProfile = "") {
+  const p = String(painProfile).toLowerCase();
+
+  if (p.includes("neural")) return "neural";
+  if (p.includes("inflamatorio")) return "inflamatorio";
+  return "mecanico";
+}
+
+function normalizeRegionForInitialLine(region = "") {
+  const r = String(region).toUpperCase();
+
+  if (r === "HOMBRO") return "hombro";
+  if (r === "RODILLA") return "rodilla";
+  if (r === "LUMBAR") return "lumbar";
+  if (r === "CERVICAL") return "cervical";
+  if (r === "CADERA") return "cadera";
+  if (r === "TOBILLO_PIE") return "tobillo_pie";
+  if (r === "TOBILLO") return "tobillo";
+  if (r === "PIE") return "pie";
+  if (r === "NEURO_PERIFERICO") return "brazo_mano";
+  if (r === "VESTIBULAR") return "mareo";
+  if (r === "RESPI_GENERAL") return "pecho_aire";
+
+  return "zona";
+}
+
+function normalizeFunctionalLimitForInitialLine(
+  functionLimitation = [],
+  region = "",
+  painProfile = ""
+) {
+  const joined = Array.isArray(functionLimitation)
+    ? functionLimitation.join(" ").toLowerCase()
+    : String(functionLimitation || "").toLowerCase();
+
+  const pain = String(painProfile || "").toLowerCase();
+  const reg = String(region || "").toUpperCase();
+
+  if (
+    joined.includes("levantar") ||
+    joined.includes("arriba") ||
+    joined.includes("chaqueta") ||
+    joined.includes("vestirme") ||
+    joined.includes("peinarme")
+  ) {
+    return "levantar_brazo";
+  }
+
+  if (
+    joined.includes("caminar") ||
+    joined.includes("andar") ||
+    joined.includes("caminatas")
+  ) {
+    return "caminar";
+  }
+
+  if (joined.includes("subir escaleras") || joined.includes("subir")) {
+    return "subir_escaleras";
+  }
+
+  if (joined.includes("bajar escaleras") || joined.includes("bajar")) {
+    return "bajar_escaleras";
+  }
+
+  if (
+    joined.includes("sentado") ||
+    joined.includes("coche") ||
+    joined.includes("cine")
+  ) {
+    return "estar_sentado";
+  }
+
+  if (
+    joined.includes("sentarme") ||
+    joined.includes("levantarme") ||
+    joined.includes("incorporarme")
+  ) {
+    return "sentarme_levantarme";
+  }
+
+  if (joined.includes("agach") || joined.includes("inclinar")) {
+    return "agacharme";
+  }
+
+  if (
+    joined.includes("girar el cuello") ||
+    joined.includes("mover el cuello") ||
+    joined.includes("girar cómodo")
+  ) {
+    return "girar_cuello";
+  }
+
+  if (joined.includes("correr") || joined.includes("entrenar")) {
+    return "correr";
+  }
+
+  if (joined.includes("dormir") || joined.includes("noche")) {
+    return "dormir";
+  }
+
+  if (
+    joined.includes("cargar") ||
+    joined.includes("peso") ||
+    joined.includes("levantar cosas")
+  ) {
+    return "coger_peso";
+  }
+
+  if (joined.includes("móvil") || joined.includes("teclado")) {
+    return "usar_mano";
+  }
+
+  if (joined.includes("mareo") || joined.includes("posición")) {
+    return "mover_cabeza";
+  }
+
+  if (joined.includes("fatigo") || joined.includes("ritmo")) {
+    return "esfuerzo";
+  }
+
+  if (pain.includes("neural")) {
+    if (reg === "LUMBAR" || reg === "CERVICAL") return "estar_sentado";
+  }
+
+  if (reg === "HOMBRO") return "levantar_brazo";
+  if (reg === "RODILLA") return "subir_escaleras";
+  if (reg === "LUMBAR") return "agacharme";
+  if (reg === "CERVICAL") return "girar_cuello";
+  if (reg === "CADERA") return "sentarme_levantarme";
+  if (reg === "TOBILLO_PIE") return "caminar";
+  if (reg === "NEURO_PERIFERICO") return "usar_mano";
+  if (reg === "VESTIBULAR") return "mover_cabeza";
+  if (reg === "RESPI_GENERAL") return "esfuerzo";
+
+  return "default";
+}
+
+function pickNaturalInitialDuration(painType, seedInt) {
+  const durationMap = {
+    mecanico: [
+      "desde hace unos días",
+      "desde hace una semana o así",
+      "desde hace unas semanas",
+      "desde hace un tiempo",
+      "desde hace varios días",
+    ],
+    neural: [
+      "desde hace unos días",
+      "desde hace un tiempo",
+      "desde hace varias semanas",
+      "desde hace bastante",
+      "desde hace unos días y no se me pasa",
+    ],
+    inflamatorio: [
+      "desde ayer",
+      "desde hace poco",
+      "desde hace un par de días",
+      "desde hace unos días",
+      "desde hace unos días y va a peor",
+    ],
+  };
+
+  return pickOne(durationMap[painType] || durationMap.mecanico, seedInt);
+}
+
+function generateInitialPatientLine({
+  region,
+  painType,
+  functionalLimit,
+  seed = "default",
+}) {
+  const seedInt = hashStringToInt(
+    `${seed}|${region}|${painType}|${functionalLimit}`
+  );
+
+  const regionMap = {
+    hombro: ["el hombro"],
+    rodilla: ["la rodilla"],
+    lumbar: ["la parte baja de la espalda", "la espalda abajo"],
+    cervical: ["el cuello"],
+    cadera: ["la cadera"],
+    tobillo_pie: ["el tobillo", "el pie", "la zona del tobillo"],
+    tobillo: ["el tobillo"],
+    pie: ["el pie"],
+    brazo_mano: ["la mano", "la muñeca", "el brazo"],
+    mareo: ["la cabeza", "mareos al moverme"],
+    pecho_aire: ["la respiración", "el pecho", "el aire al moverme"],
+    zona: ["esa zona"],
+  };
+
+  const functionMap = {
+    levantar_brazo: [
+      "cuando levanto el brazo",
+      "al mover el brazo hacia arriba",
+      "cuando intento coger algo en alto",
+    ],
+    caminar: ["al caminar", "cuando camino un rato", "al andar"],
+    subir_escaleras: [
+      "al subir escaleras",
+      "cuando subo escaleras",
+      "al hacer escaleras",
+    ],
+    bajar_escaleras: ["al bajar escaleras", "cuando bajo escaleras"],
+    sentarme_levantarme: [
+      "al sentarme y levantarme",
+      "cuando me siento o me levanto",
+      "al incorporarme",
+    ],
+    agacharme: [
+      "cuando me agacho",
+      "al inclinarme",
+      "cuando me doblo hacia abajo",
+    ],
+    girar_cuello: [
+      "cuando giro el cuello",
+      "al mover el cuello",
+      "cuando miro hacia los lados",
+    ],
+    estar_sentado: [
+      "cuando estoy mucho rato sentado",
+      "al estar sentado bastante tiempo",
+      "si paso mucho rato sentado",
+    ],
+    correr: ["al correr", "cuando intento correr", "si hago algo de carrera"],
+    dormir: ["por la noche", "al dormir", "cuando me tumbo para dormir"],
+    coger_peso: [
+      "cuando cojo peso",
+      "al cargar cosas",
+      "si levanto algo pesado",
+    ],
+    usar_mano: [
+      "cuando uso mucho la mano",
+      "al estar con el móvil o el teclado",
+      "cuando llevo un rato usando la mano",
+    ],
+    mover_cabeza: [
+      "cuando muevo la cabeza",
+      "al girarme en la cama",
+      "cuando cambio de posición",
+    ],
+    esfuerzo: [
+      "cuando hago esfuerzo",
+      "al subir escaleras o andar rápido",
+      "cuando voy un poco más deprisa",
+    ],
+    default: ["al moverme", "cuando hago algunas cosas", "en el día a día"],
+  };
+
+  const openers = [
+    "Hola,",
+    "Buenas,",
+    "Pues mira,",
+    "Hola, quería comentarte que",
+    "Buenas, vengo porque",
+  ];
+
+  const starters = [
+    "me duele",
+    "me está molestando",
+    "tengo molestias en",
+    "me noto mal",
+    "llevo con molestias en",
+  ];
+
+  const closers = [
+    ".",
+    " y no sé muy bien por qué.",
+    " y me está preocupando un poco.",
+    " y cada vez me molesta más.",
+    "",
+  ];
+
+  const regionText = pickOne(regionMap[region] || regionMap.zona, seedInt + 1);
+  const durationText = pickNaturalInitialDuration(painType, seedInt + 2);
+  const functionText = pickOne(
+    functionMap[functionalLimit] || functionMap.default,
+    seedInt + 3
+  );
+  const opener = pickOne(openers, seedInt + 4);
+  const starter = pickOne(starters, seedInt + 5);
+  const closer = pickOne(closers, seedInt + 6);
+
+  const templates = [
+    `${opener} ${starter} ${regionText} ${durationText}, sobre todo ${functionText}${closer}`,
+    `${opener} ${starter} ${regionText} ${durationText} y lo noto más ${functionText}${closer}`,
+    `${opener} ${regionText} me está dando problemas ${durationText}, especialmente ${functionText}${closer}`,
+    `${opener} llevo ${durationText} con molestias en ${regionText}, más que nada ${functionText}${closer}`,
+    `${opener} me empezó a molestar ${regionText} ${durationText}, sobre todo ${functionText}${closer}`,
+  ];
+
+  return String(pickOne(templates, seedInt + 7) || "")
+    .replace(/\s+/g, " ")
+    .replace(/\s,/, ",")
+    .replace(/\s\./, ".")
+    .trim();
+}
+
+/**
+ * =========================================================
  * Selección determinista del caso
  * =========================================================
  */
@@ -884,7 +1194,9 @@ function pickCaseSpecGeneric({
  * =========================================================
  */
 function buildHiddenCaseModel(spec, trainingConfig = {}) {
-  const seedBase = `${spec.region_or_topic}|${spec.framework}|${spec.pathology}|${trainingConfig?.academicLevel || ""}|${spec.difficulty}`;
+  const seedBase = `${spec.region_or_topic}|${spec.framework}|${spec.pathology}|${
+    trainingConfig?.academicLevel || ""
+  }|${spec.difficulty}`;
   const seedInt = hashStringToInt(seedBase);
 
   const ps = spec.patient_story || {};
@@ -1049,7 +1361,8 @@ function buildObjectiveHints({
   painProfile,
 }) {
   const common = {
-    inspection: "sin hallazgos llamativos a simple vista salvo protección o postura si procede",
+    inspection:
+      "sin hallazgos llamativos a simple vista salvo protección o postura si procede",
     active_movement:
       "los movimientos provocadores reproducen molestia según la región y el patrón",
     passive_movement:
@@ -1058,10 +1371,9 @@ function buildObjectiveHints({
       "pueden molestar si hay componente contráctil o sobrecarga",
     palpation:
       "puede haber sensibilidad local si el cuadro lo justifica",
-    neuro:
-      painProfile.includes("neural")
-        ? "puede haber hormigueo o irradiación leve si el alumno lo explora bien"
-        : "sin hallazgos neurológicos llamativos salvo que el alumno fuerce ese camino",
+    neuro: painProfile.includes("neural")
+      ? "puede haber hormigueo o irradiación leve si el alumno lo explora bien"
+      : "sin hallazgos neurológicos llamativos salvo que el alumno fuerce ese camino",
   };
 
   const map = {
@@ -1088,20 +1400,18 @@ function buildObjectiveHints({
         "flexión, extensión o sedestación mantenida pueden modular los síntomas según el cuadro",
       passive_movement:
         "menos relevante como dato espontáneo del paciente; el estudiante debe buscar comportamiento",
-      neuro:
-        painProfile.includes("neural")
-          ? "si el alumno pregunta bien pueden aparecer irradiación, hormigueo o dolor que baja por la pierna"
-          : "no hay síntomas neurológicos de peso",
+      neuro: painProfile.includes("neural")
+        ? "si el alumno pregunta bien pueden aparecer irradiación, hormigueo o dolor que baja por la pierna"
+        : "no hay síntomas neurológicos de peso",
     },
     CERVICAL: {
       active_movement:
         "girar o mantener posturas reproduce síntomas; si es neural puede haber irradiación al brazo",
       passive_movement:
         "menos accesible como lenguaje de paciente; responder solo si el alumno lo formula de forma sencilla",
-      neuro:
-        painProfile.includes("neural")
-          ? "puede haber hormigueo o irradiación leve al brazo"
-          : "sin déficits neurológicos claros",
+      neuro: painProfile.includes("neural")
+        ? "puede haber hormigueo o irradiación leve al brazo"
+        : "sin déficits neurológicos claros",
     },
     CADERA: {
       active_movement:
@@ -1120,8 +1430,7 @@ function buildObjectiveHints({
     RESPI_GENERAL: {
       active_movement:
         "la carga funcional aumenta la disnea o fatiga",
-      passive_movement:
-        "no aplicable de forma relevante",
+      passive_movement: "no aplicable de forma relevante",
     },
   };
 
@@ -1136,6 +1445,7 @@ function buildObjectiveHints({
     },
   };
 }
+
 function buildInitialHypotheses({ region, framework, pathology, painProfile }) {
   const hypotheses = [];
 
@@ -1143,10 +1453,8 @@ function buildInitialHypotheses({ region, framework, pathology, painProfile }) {
     hypotheses.push({ label, kind, probability });
   };
 
-  // Hipótesis principal
   add(pathology, "principal", "alta");
 
-  // Hipótesis secundarias por patrón
   if (painProfile.includes("neural")) {
     add("Componente neural periférico leve", "secundaria", "media");
     add("Disfunción mecánica con sensibilización local", "secundaria", "baja");
@@ -1158,7 +1466,6 @@ function buildInitialHypotheses({ region, framework, pathology, painProfile }) {
     add("Sobrecarga tisular local", "secundaria", "media");
   }
 
-  // Hipótesis por región
   if (region === "HOMBRO") {
     add("Dolor subacromial mecánico", "alternativa", "media");
     add("Déficit de control escapulohumeral", "alternativa", "baja");
@@ -1196,49 +1503,89 @@ function buildInitialHypotheses({ region, framework, pathology, painProfile }) {
   return hypotheses.slice(0, 5);
 }
 
-function buildSupportAndRefuteData({ region, pathology, painProfile, irritability, functionLimitation }) {
+function buildSupportAndRefuteData({
+  region,
+  pathology,
+  painProfile,
+  irritability,
+  functionLimitation,
+}) {
   const supports = [];
   const refutes = [];
 
-  supports.push("La conducta del síntoma encaja con el patrón dominante del caso.");
-  supports.push("La limitación funcional es coherente con la región afectada.");
-  supports.push("La cronología y los agravantes apoyan una hipótesis musculoesquelética plausible.");
+  supports.push(
+    "La conducta del síntoma encaja con el patrón dominante del caso."
+  );
+  supports.push(
+    "La limitación funcional es coherente con la región afectada."
+  );
+  supports.push(
+    "La cronología y los agravantes apoyan una hipótesis musculoesquelética plausible."
+  );
 
   if (painProfile.includes("neural")) {
-    supports.push("La presencia de irradiación u hormigueo apoyaría un componente neural leve.");
-    refutes.push("La ausencia total de síntomas irradiados o sensitivos debilitaría la hipótesis neural.");
+    supports.push(
+      "La presencia de irradiación u hormigueo apoyaría un componente neural leve."
+    );
+    refutes.push(
+      "La ausencia total de síntomas irradiados o sensitivos debilitaría la hipótesis neural."
+    );
   }
 
   if (painProfile.includes("inflamatorio")) {
-    supports.push("La irritabilidad media-alta y la sensibilidad con carga apoyarían irritación local.");
-    refutes.push("La clara dependencia mecánica sin irritabilidad debilitaría el componente inflamatorio.");
+    supports.push(
+      "La irritabilidad media-alta y la sensibilidad con carga apoyarían irritación local."
+    );
+    refutes.push(
+      "La clara dependencia mecánica sin irritabilidad debilitaría el componente inflamatorio."
+    );
   }
 
   if (irritability === "alta") {
-    supports.push("La fácil provocación del síntoma sugiere un cuadro más reactivo o irritable.");
-    refutes.push("Si tolera carga y repetición sin cambio relevante, la hipótesis actual pierde fuerza.");
+    supports.push(
+      "La fácil provocación del síntoma sugiere un cuadro más reactivo o irritable."
+    );
+    refutes.push(
+      "Si tolera carga y repetición sin cambio relevante, la hipótesis actual pierde fuerza."
+    );
   }
 
   if (region === "HOMBRO") {
-    supports.push("El dolor al elevar el brazo o en tareas por encima de la cabeza reforzaría la hipótesis principal.");
-    refutes.push("La movilidad totalmente libre y sin dolor en carga debilitaría una hipótesis de hombro mecánico.");
+    supports.push(
+      "El dolor al elevar el brazo o en tareas por encima de la cabeza reforzaría la hipótesis principal."
+    );
+    refutes.push(
+      "La movilidad totalmente libre y sin dolor en carga debilitaría una hipótesis de hombro mecánico."
+    );
   }
 
   if (region === "LUMBAR") {
-    supports.push("El cambio por sedestación, flexión o carga apoya una hipótesis lumbar mecánica.");
-    refutes.push("La falta total de relación con postura o movimiento debilitaría el cuadro lumbar mecánico.");
+    supports.push(
+      "El cambio por sedestación, flexión o carga apoya una hipótesis lumbar mecánica."
+    );
+    refutes.push(
+      "La falta total de relación con postura o movimiento debilitaría el cuadro lumbar mecánico."
+    );
   }
 
   if (region === "RODILLA") {
-    supports.push("La reproducción con escaleras, sentadilla o carga funcional refuerza hipótesis de rodilla mecánica.");
-    refutes.push("La ausencia de síntomas con carga funcional debilitaría la hipótesis principal.");
+    supports.push(
+      "La reproducción con escaleras, sentadilla o carga funcional refuerza hipótesis de rodilla mecánica."
+    );
+    refutes.push(
+      "La ausencia de síntomas con carga funcional debilitaría la hipótesis principal."
+    );
   }
 
   if (functionLimitation?.length) {
-    supports.push(`La limitación funcional principal (${functionLimitation[0]}) encaja con la presentación.`);
+    supports.push(
+      `La limitación funcional principal (${functionLimitation[0]}) encaja con la presentación.`
+    );
   }
 
-  refutes.push("Los red flags claros o una incoherencia mayor cambiarían por completo la prioridad clínica.");
+  refutes.push(
+    "Los red flags claros o una incoherencia mayor cambiarían por completo la prioridad clínica."
+  );
 
   return {
     supports: supports.slice(0, 5),
@@ -1249,45 +1596,73 @@ function buildSupportAndRefuteData({ region, pathology, painProfile, irritabilit
 function buildUsefulExamDirections({ region, painProfile, irritability }) {
   const exam = [];
 
-  exam.push("Confirmar comportamiento del dolor con movimiento, postura, carga y repetición.");
-  exam.push("Comparar qué hallazgos apoyan la hipótesis principal y cuáles la debilitan.");
+  exam.push(
+    "Confirmar comportamiento del dolor con movimiento, postura, carga y repetición."
+  );
+  exam.push(
+    "Comparar qué hallazgos apoyan la hipótesis principal y cuáles la debilitan."
+  );
 
   if (region === "HOMBRO") {
-    exam.push("Explorar elevación activa, rango doloroso, tolerancia en carga y función escapular.");
+    exam.push(
+      "Explorar elevación activa, rango doloroso, tolerancia en carga y función escapular."
+    );
   }
   if (region === "LUMBAR") {
-    exam.push("Explorar cambio con flexión, extensión, sedestación, marcha y posibles síntomas irradiados.");
+    exam.push(
+      "Explorar cambio con flexión, extensión, sedestación, marcha y posibles síntomas irradiados."
+    );
   }
   if (region === "CERVICAL") {
-    exam.push("Explorar movilidad cervical, relación con brazo, postura y carga mantenida.");
+    exam.push(
+      "Explorar movilidad cervical, relación con brazo, postura y carga mantenida."
+    );
   }
   if (region === "RODILLA") {
-    exam.push("Explorar tareas funcionales como sentadilla, escalón, marcha y tolerancia a flexión.");
+    exam.push(
+      "Explorar tareas funcionales como sentadilla, escalón, marcha y tolerancia a flexión."
+    );
   }
   if (region === "TOBILLO_PIE") {
-    exam.push("Explorar apoyo, marcha, puntillas, control y movimientos que cargan la zona.");
+    exam.push(
+      "Explorar apoyo, marcha, puntillas, control y movimientos que cargan la zona."
+    );
   }
   if (region === "CADERA") {
-    exam.push("Explorar marcha, apoyo unipodal, subir escaleras y flexión funcional.");
+    exam.push(
+      "Explorar marcha, apoyo unipodal, subir escaleras y flexión funcional."
+    );
   }
 
   if (painProfile.includes("neural")) {
-    exam.push("Explorar con intención la presencia de irradiación, hormigueo o cambios sensitivos leves.");
+    exam.push(
+      "Explorar con intención la presencia de irradiación, hormigueo o cambios sensitivos leves."
+    );
   }
 
   if (irritability === "alta") {
-    exam.push("Dosificar la exploración: poca carga, evitar exceso de provocación y priorizar seguridad.");
+    exam.push(
+      "Dosificar la exploración: poca carga, evitar exceso de provocación y priorizar seguridad."
+    );
   }
 
   return exam.slice(0, 5);
 }
 
-function buildFunctionalDiagnosis({ region, pathology, painProfile, irritability, severity, functionLimitation }) {
+function buildFunctionalDiagnosis({
+  region,
+  pathology,
+  painProfile,
+  irritability,
+  severity,
+  functionLimitation,
+}) {
   const regionText = String(region || "región no especificada").toLowerCase();
   const limitationText = functionLimitation?.[0] || "actividad funcional relevante";
 
   return `Cuadro ${painProfile} en ${regionText}, con irritabilidad ${irritability}, severidad ${severity} y limitación principal en ${limitationText}. La etiqueta anatómica oculta compatible es ${pathology}, pero la conclusión útil es funcional y basada en comportamiento del síntoma, carga y función.`;
 }
+
 /**
  * =========================================================
  * Prompts
@@ -1338,7 +1713,7 @@ ${levelLine}
 `.trim();
 }
 
-function buildInternalPatientBrief(spec, hiddenCase) {
+function buildInternalPatientBrief(spec, hiddenCase, initialPatientLine = "") {
   return `
 === CASO CLÍNICO OCULTO (NO REVELAR) ===
 KB version: ${spec.kb_version}
@@ -1389,6 +1764,11 @@ Tests resistidos o carga: ${hiddenCase.objective_hints.resisted_tests}
 Palpación: ${hiddenCase.objective_hints.palpation}
 Componente neuro: ${hiddenCase.objective_hints.neuro}
 
+=== PRIMER MENSAJE NATURAL ESPERADO ===
+Primer mensaje del paciente: ${initialPatientLine || "No definido"}
+- Ese primer mensaje debe sonar humano, breve y nada técnico.
+- Mantén ese mismo tono conversacional durante el resto del caso.
+
 === RESTRICCIONES ===
 - NO digas diagnósticos técnicos.
 - NO uses el nombre de la patología.
@@ -1404,7 +1784,12 @@ ${JSON.stringify(hiddenCase.case_core.forbidden || [])}
 `.trim();
 }
 
-function buildPatientSystemPrompt({ spec, hiddenCase, trainingConfig }) {
+function buildPatientSystemPrompt({
+  spec,
+  hiddenCase,
+  trainingConfig,
+  initialPatientLine = "",
+}) {
   const scopeRules = buildScopeRules(trainingConfig);
 
   return `
@@ -1472,8 +1857,9 @@ ERRORES QUE DEBES EVITAR
 - No dar una anamnesis completa espontáneamente.
 - No sonar como ChatGPT.
 - No sonar como OSCE artificial.
+- No uses palabras como “femoropatelar”, “radiculopatía”, “valgo”, “supraespinoso”, “trocánter”, “tendón rotuliano” ni otras etiquetas anatómicas técnicas, salvo que el alumno te pregunte si alguien te ha dicho algún nombre.
 
-${buildInternalPatientBrief(spec, hiddenCase)}
+${buildInternalPatientBrief(spec, hiddenCase, initialPatientLine)}
 `.trim();
 }
 
@@ -1670,11 +2056,39 @@ export const handler = async (event) => {
         });
 
         const hiddenCase = buildHiddenCaseModel(spec, trainingConfig);
+
+        const initialPatientLine = generateInitialPatientLine({
+          region: normalizeRegionForInitialLine(spec.region_or_topic),
+          painType: normalizePainTypeForInitialLine(spec.pain_profile),
+          functionalLimit: normalizeFunctionalLimitForInitialLine(
+            hiddenCase.case_core.function_limitation,
+            spec.region_or_topic,
+            spec.pain_profile
+          ),
+          seed: stableSeed,
+        });
+
         const systemPrompt = buildPatientSystemPrompt({
           spec,
           hiddenCase,
           trainingConfig,
+          initialPatientLine,
         });
+
+        const normalizedHistory = normalizeHistory(history);
+        const isFirstPatientTurn = normalizedHistory.length === 0;
+
+        if (isFirstPatientTurn) {
+          return json(200, {
+            reply: initialPatientLine,
+            caseMeta: {
+              region_or_topic: spec.region_or_topic,
+              framework: spec.framework,
+              pathology_hidden: spec.pathology,
+              difficulty: spec.difficulty,
+            },
+          });
+        }
 
         const reply = await callOpenAI({
           client,
