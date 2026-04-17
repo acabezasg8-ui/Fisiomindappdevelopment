@@ -1,42 +1,5 @@
+// Cliente de Supabase - Conectado al backend
 import { projectId, publicAnonKey } from './info.tsx';
-
-/**
- * =========================================================
- * Tipos compartidos
- * =========================================================
- */
-export type TrainingStage =
-  | 'ANAMNESIS'
-  | 'ANAMNESIS_VALORACION'
-  | 'ANAMNESIS_VALORACION_TRATAMIENTO';
-
-export type ClinicalArea = 'MSK' | 'NEURO' | 'RESPI';
-
-export type TrainingConfig = {
-  stage: TrainingStage;
-  area?: ClinicalArea;
-  academicLevel?: '1' | '2' | '3' | '4';
-};
-
-export type ChatMessage = {
-  role: 'student' | 'patient';
-  message: string;
-};
-
-export type EvaluationResult = {
-  anamnesis: number;
-  exploracion: number;
-  razonamientoClinico: number;
-  tratamiento: number;
-  comunicacion: number;
-  feedback: {
-    anamnesis: string;
-    exploracion: string;
-    razonamientoClinico: string;
-    tratamiento: string;
-    comunicacion: string;
-  };
-};
 
 export type CaseData = {
   id: string;
@@ -46,337 +9,147 @@ export type CaseData = {
   chiefComplaint: string;
   pathology: string;
   date: string;
-  trainingConfig?: TrainingConfig;
-  evaluation?: EvaluationResult;
-  chatHistory?: ChatMessage[];
+  evaluation?: {
+    anamnesis: number;
+    exploracion: number;
+    razonamientoClinico: number;
+    tratamiento: number;
+    comunicacion: number;
+    feedback: {
+      anamnesis: string;
+      exploracion: string;
+      razonamientoClinico: string;
+      tratamiento: string;
+      comunicacion: string;
+    };
+  };
+  chatHistory?: Array<{ role: 'student' | 'patient'; message: string }>;
   notes?: string;
 };
 
-export type ExamMessage = {
-  role: 'student' | 'tutor';
-  message: string;
-  isHint?: boolean;
-};
-
-export type ExamCaseData = {
-  id: string;
-  caseStatement: string;
-  patientInfo?: {
-    age?: number;
-    occupation?: string;
-    chiefComplaint?: string;
-  };
-  pathology?: string;
-  isCustom: boolean;
-  date: string;
-  evaluation?: EvaluationResult;
-  messages?: ExamMessage[];
-  studentAnswer?: string;
-};
-
-type SessionData = {
-  userId: string;
-  userName: string;
-  accessToken: string;
-};
-
-type ChatEvaluationResponse = {
-  evaluation?: {
-    competencias?: Array<{
-      id?: string;
-      score?: number;
-      feedback?: string;
-    }>;
-    global?: {
-      score?: number;
-      resumen?: string;
-    };
-    fortalezas?: string[];
-    errores_clave?: string[];
-    preguntas_omitidas?: string[];
-    sesgos_detectados?: string[];
-    siguiente_paso?: string;
-  };
-  error?: string;
-  raw?: string;
-};
-
-/**
- * =========================================================
- * Endpoints
- * =========================================================
- */
 const SERVER_URL = `https://${projectId}.supabase.co/functions/v1/make-server-eba6a2ba`;
-const CHAT_FUNCTION_URL = '/.netlify/functions/chat';
 
-/**
- * =========================================================
- * Helpers base
- * =========================================================
- */
-function getAnonHeaders() {
+// Helper para obtener headers con autenticación
+const getHeaders = () => {
   return {
     'Content-Type': 'application/json',
-    Authorization: `Bearer ${publicAnonKey}`,
   };
-}
+};
 
-function getAuthHeaders() {
+// Helper para obtener headers con publicAnonKey (para endpoints que necesitan auth básica)
+const getAnonHeaders = () => {
+  return {
+    'Content-Type': 'application/json',
+    'Authorization': `Bearer ${publicAnonKey}`,
+  };
+};
+
+// Helper para obtener headers con access token del usuario (para endpoints protegidos)
+const getAuthHeaders = () => {
   const accessToken = localStorage.getItem('fisiomind_access_token');
-
   return {
     'Content-Type': 'application/json',
-    Authorization: `Bearer ${accessToken || publicAnonKey}`,
+    'Authorization': `Bearer ${accessToken || publicAnonKey}`,
   };
-}
+};
 
-function getUserId(): string | null {
+// Helper para obtener userId
+const getUserId = (): string | null => {
   return localStorage.getItem('fisiomind_user_id');
-}
+};
 
-function getUserName(): string | null {
-  return localStorage.getItem('fisiomind_user_name');
-}
+// ============ FUNCIONES DE AUTENTICACIÓN ============
 
-function getAccessToken(): string | null {
-  return localStorage.getItem('fisiomind_access_token');
-}
-
-async function parseJsonSafe<T = any>(response: Response): Promise<T | null> {
-  try {
-    return (await response.json()) as T;
-  } catch {
-    return null;
-  }
-}
-
-async function parseErrorMessage(
-  response: Response,
-  fallbackMessage: string
-): Promise<string> {
-  const data = await parseJsonSafe<{ error?: string }>(response);
-  return data?.error || fallbackMessage;
-}
-
-function mapChatHistoryToOpenAIFormat(history: ChatMessage[]) {
-  return history.map((msg) => ({
-    role: msg.role === 'student' ? 'user' : 'assistant',
-    content: msg.message,
-  }));
-}
-
-function clampScore(value: unknown): number {
-  if (typeof value !== 'number' || Number.isNaN(value)) return 0;
-  return Math.max(0, Math.min(100, Math.round(value)));
-}
-
-function safeString(value: unknown, fallback = ''): string {
-  return typeof value === 'string' && value.trim() ? value.trim() : fallback;
-}
-
-function getCompetencyScore(
-  competencias: ChatEvaluationResponse['evaluation'] extends { competencias?: infer T }
-    ? T
-    : never,
-  id: string
-): number {
-  if (!Array.isArray(competencias)) return 0;
-  const item = competencias.find((c: any) => c?.id === id);
-  return clampScore(item?.score);
-}
-
-function getCompetencyFeedback(
-  competencias: ChatEvaluationResponse['evaluation'] extends { competencias?: infer T }
-    ? T
-    : never,
-  id: string,
-  fallback: string
-): string {
-  if (!Array.isArray(competencias)) return fallback;
-  const item = competencias.find((c: any) => c?.id === id);
-  return safeString(item?.feedback, fallback);
-}
-
-function normalizeChatEvaluationToAppFormat(
-  raw: ChatEvaluationResponse['evaluation'] | null | undefined
-): EvaluationResult | null {
-  if (!raw || !Array.isArray(raw.competencias)) return null;
-
-  const anamnesis = getCompetencyScore(raw.competencias, 'anamnesis');
-  const exploracion = getCompetencyScore(raw.competencias, 'exploracion');
-  const razonamientoClinico = getCompetencyScore(
-    raw.competencias,
-    'razonamiento_clinico'
-  );
-  const tratamiento = getCompetencyScore(raw.competencias, 'tratamiento');
-  const comunicacion = getCompetencyScore(raw.competencias, 'comunicacion');
-
-  const hasSomeScore =
-    anamnesis > 0 ||
-    exploracion > 0 ||
-    razonamientoClinico > 0 ||
-    tratamiento > 0 ||
-    comunicacion > 0;
-
-  if (!hasSomeScore) return null;
-
-  return {
-    anamnesis,
-    exploracion,
-    razonamientoClinico,
-    tratamiento,
-    comunicacion,
-    feedback: {
-      anamnesis: getCompetencyFeedback(
-        raw.competencias,
-        'anamnesis',
-        'La anamnesis puede afinarse mejor en cronología, comportamiento y factores agravantes o alivio.'
-      ),
-      exploracion: getCompetencyFeedback(
-        raw.competencias,
-        'exploracion',
-        'La exploración debe relacionarse mejor con tus hipótesis clínicas.'
-      ),
-      razonamientoClinico: getCompetencyFeedback(
-        raw.competencias,
-        'razonamiento_clinico',
-        'El razonamiento clínico puede mejorar si conectas mejor datos, hipótesis y decisiones.'
-      ),
-      tratamiento: getCompetencyFeedback(
-        raw.competencias,
-        'tratamiento',
-        'El tratamiento debe encajar mejor con el caso y con el objetivo funcional.'
-      ),
-      comunicacion: getCompetencyFeedback(
-        raw.competencias,
-        'comunicacion',
-        'La comunicación puede ganar claridad, estructura y enfoque centrado en el paciente.'
-      ),
-    },
-  };
-}
-
-/**
- * =========================================================
- * Auth
- * =========================================================
- */
-export const login = async (
-  email: string,
-  password: string
-): Promise<SessionData | null> => {
+// Login con Supabase Auth
+export const login = async (email: string, password: string): Promise<{ userId: string; userName: string; accessToken: string } | null> => {
   try {
     const response = await fetch(`${SERVER_URL}/auth/login`, {
       method: 'POST',
-      headers: getAnonHeaders(),
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${publicAnonKey}`,
+      },
       body: JSON.stringify({ email, password }),
     });
 
     if (!response.ok) {
-      const errorMessage = await parseErrorMessage(
-        response,
-        'Error al iniciar sesión'
-      );
-      throw new Error(errorMessage);
+      const error = await response.json();
+      console.error('Login error:', error);
+      // Lanzar error con mensaje del servidor para que AuthScreen lo capture
+      throw new Error(error.error || 'Error al iniciar sesión');
     }
 
-    const data = await parseJsonSafe<SessionData>(response);
-
-    if (!data?.userId || !data?.accessToken) {
-      throw new Error('Respuesta inválida del servidor al iniciar sesión');
-    }
-
+    const data = await response.json();
+    
+    // Guardar sesión en localStorage
     localStorage.setItem('fisiomind_user_id', data.userId);
     localStorage.setItem('fisiomind_user_name', data.userName);
     localStorage.setItem('fisiomind_access_token', data.accessToken);
-
+    
     return data;
   } catch (error) {
     console.error('Error in login:', error);
-    throw error;
+    throw error; // Propagar el error para que AuthScreen lo maneje
   }
 };
 
-export const signup = async (
-  email: string,
-  password: string,
-  name: string
-): Promise<SessionData> => {
+// Signup con Supabase Auth
+export const signup = async (email: string, password: string, name: string): Promise<{ userId: string; userName: string; accessToken: string }> => {
   try {
     const response = await fetch(`${SERVER_URL}/auth/signup`, {
       method: 'POST',
-      headers: getAnonHeaders(),
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${publicAnonKey}`,
+      },
       body: JSON.stringify({ email, password, name }),
     });
 
     if (!response.ok) {
-      const errorMessage = await parseErrorMessage(
-        response,
-        'Error al crear cuenta'
-      );
-      throw new Error(errorMessage);
+      const error = await response.json();
+      throw new Error(error.error || 'Error al crear cuenta');
     }
 
-    const data = await parseJsonSafe<{
-      userId: string;
-      accessToken: string;
-      userName?: string;
-    }>(response);
-
-    if (!data?.userId || !data?.accessToken) {
-      throw new Error('Respuesta inválida del servidor al crear cuenta');
-    }
-
-    const session: SessionData = {
-      userId: data.userId,
-      userName: data.userName || name,
-      accessToken: data.accessToken,
-    };
-
-    localStorage.setItem('fisiomind_user_id', session.userId);
-    localStorage.setItem('fisiomind_user_name', session.userName);
-    localStorage.setItem('fisiomind_access_token', session.accessToken);
-
-    return session;
+    const data = await response.json();
+    
+    // Guardar sesión en localStorage
+    localStorage.setItem('fisiomind_user_id', data.userId);
+    localStorage.setItem('fisiomind_user_name', name);
+    localStorage.setItem('fisiomind_access_token', data.accessToken);
+    
+    return { userId: data.userId, userName: name, accessToken: data.accessToken };
   } catch (error) {
     console.error('Error in signup:', error);
     throw error;
   }
 };
 
-export const checkSession = async (): Promise<{
-  userId: string;
-  userName: string;
-} | null> => {
-  const userId = getUserId();
-  const userName = getUserName();
-  const accessToken = getAccessToken();
-
+// Verificar sesión activa
+export const checkSession = async (): Promise<{ userId: string; userName: string } | null> => {
+  const userId = localStorage.getItem('fisiomind_user_id');
+  const userName = localStorage.getItem('fisiomind_user_name');
+  const accessToken = localStorage.getItem('fisiomind_access_token');
+  
   if (!userId || !accessToken) {
     return null;
   }
-
-  return {
-    userId,
-    userName: userName || 'Estudiante',
-  };
+  
+  return { userId, userName: userName || 'Estudiante' };
 };
 
+// Cerrar sesión
 export const logout = async (): Promise<void> => {
   localStorage.removeItem('fisiomind_user_id');
   localStorage.removeItem('fisiomind_user_name');
   localStorage.removeItem('fisiomind_access_token');
 };
 
-/**
- * =========================================================
- * Casos clínicos - persistencia Supabase
- * =========================================================
- */
+// ============ FUNCIONES DE CASOS CLÍNICOS ============
+
+// Guardar un caso completado
 export const saveCompletedCase = async (caseData: CaseData): Promise<void> => {
   try {
     const userId = getUserId();
-
     if (!userId) {
       throw new Error('No user session');
     }
@@ -388,291 +161,147 @@ export const saveCompletedCase = async (caseData: CaseData): Promise<void> => {
     });
 
     if (!response.ok) {
-      const errorMessage = await parseErrorMessage(
-        response,
-        'Error saving case'
-      );
-      throw new Error(errorMessage);
+      const error = await response.json();
+      throw new Error(error.error || 'Error saving case');
     }
+
+    console.log('Case saved successfully');
   } catch (error) {
     console.error('Error saving case:', error);
     throw error;
   }
 };
 
+// Obtener todos los casos completados
 export const getCompletedCases = async (): Promise<CaseData[]> => {
   try {
     const userId = getUserId();
-
     if (!userId) {
+      console.log('No userId found, skipping fetch');
       return [];
     }
 
+    console.log(`Fetching cases for userId: ${userId}`);
+    
     const response = await fetch(`${SERVER_URL}/cases/get?userId=${userId}`, {
       method: 'GET',
       headers: getAnonHeaders(),
     });
 
     if (!response.ok) {
-      const errorMessage = await parseErrorMessage(
-        response,
-        'Error fetching cases'
-      );
-      throw new Error(errorMessage);
+      const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
+      console.error('Server error fetching cases:', errorData);
+      throw new Error(errorData.error || 'Error fetching cases');
     }
 
-    const data = await parseJsonSafe<{ cases?: CaseData[] }>(response);
-    return data?.cases || [];
+    const data = await response.json();
+    console.log(`✓ Fetched ${data.cases?.length || 0} cases`);
+    return data.cases || [];
   } catch (error) {
     console.error('Error fetching cases:', error);
     return [];
   }
 };
 
-/**
- * =========================================================
- * Generación de casos
- * =========================================================
- */
-export const generateNewCase = async (
-  trainingConfig: TrainingConfig
-): Promise<CaseData> => {
+// Generar un nuevo caso clínico
+export const generateNewCase = async (): Promise<CaseData> => {
   try {
+    console.log('Generating new case...');
+    
     const response = await fetch(`${SERVER_URL}/cases/generate`, {
       method: 'POST',
       headers: getAnonHeaders(),
-      body: JSON.stringify({ trainingConfig }),
     });
 
     if (!response.ok) {
-      const errorMessage = await parseErrorMessage(
-        response,
-        'Error generating case'
-      );
-      throw new Error(errorMessage);
+      const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
+      console.error('Server error generating case:', errorData);
+      throw new Error(errorData.error || 'Error generating case');
     }
 
-    const data = await parseJsonSafe<{ case?: CaseData }>(response);
-
-    if (!data?.case) {
-      throw new Error('No se recibió ningún caso desde el servidor');
-    }
-
-    return {
-      ...data.case,
-      trainingConfig,
-    };
+    const data = await response.json();
+    console.log(`✓ Case generated: ${data.case?.patientName}`);
+    return data.case;
   } catch (error) {
     console.error('Error generating case:', error);
     throw error;
   }
 };
 
-/**
- * =========================================================
- * IA clínica - NETLIFY FUNCTION NUEVA
- * =========================================================
- * Mantener aquí el cliente te permite centralizar llamadas
- * aunque la UI ya llame directo al backend si quieres.
- */
-export const generatePatientReply = async ({
-  message,
-  caseData,
-  chatHistory,
-}: {
-  message: string;
-  caseData: CaseData;
-  chatHistory: ChatMessage[];
-}): Promise<{
-  reply: string;
-  caseMeta?: {
-    region_or_topic?: string;
-    framework?: string;
-    pathology_hidden?: string;
-    difficulty?: string;
-  };
-}> => {
-  try {
-    const response = await fetch(CHAT_FUNCTION_URL, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        mode: 'casos_libres',
-        action: 'paciente',
-        message,
-        history: mapChatHistoryToOpenAIFormat(chatHistory),
-        trainingConfig: caseData.trainingConfig,
-        seed: caseData.id,
-      }),
-    });
-
-    const data = await parseJsonSafe<{
-      reply?: string;
-      error?: string;
-      caseMeta?: {
-        region_or_topic?: string;
-        framework?: string;
-        pathology_hidden?: string;
-        difficulty?: string;
-      };
-    }>(response);
-
-    if (!response.ok) {
-      throw new Error(data?.error || 'Error al generar respuesta del paciente');
-    }
-
-    return {
-      reply:
-        safeString(data?.reply, 'Disculpe, ¿puede repetir la pregunta?'),
-      caseMeta: data?.caseMeta,
-    };
-  } catch (error) {
-    console.error('Error generating patient reply:', error);
-    return {
-      reply: 'Disculpe, ¿puede repetir la pregunta?',
-    };
-  }
-};
-
-/**
- * =========================================================
- * Compatibilidad con código antiguo
- * =========================================================
- */
+// Generar respuesta de IA (paciente virtual o tutor)
 export const generateAIResponse = async (
   message: string,
   caseData: CaseData,
-  chatHistory: ChatMessage[],
-  isExamMode = false
+  chatHistory: Array<{ role: 'student' | 'patient'; message: string }>,
+  isExamMode: boolean = false
 ): Promise<string> => {
-  if (isExamMode) {
-    return 'Este flujo de examen no usa generateAIResponse en la arquitectura actual.';
-  }
-
-  const result = await generatePatientReply({
-    message,
-    caseData,
-    chatHistory,
-  });
-
-  return result.reply;
-};
-
-/**
- * =========================================================
- * Evaluación IA - NETLIFY FUNCTION NUEVA
- * =========================================================
- */
-export const generateAIEvaluation = async (
-  caseData: CaseData,
-  chatHistory: ChatHistoryMessage[],
-  notes: string
-): Promise<EvaluationResult | null> => {
   try {
-    const studentMessages = chatHistory
-      .filter((msg) => msg.role === 'student')
-      .map((msg) => msg.message)
-      .join('\n');
-
-    const patientMessages = chatHistory
-      .filter((msg) => msg.role === 'patient')
-      .map((msg) => msg.message)
-      .join('\n');
-
-    const stage = caseData.trainingConfig?.stage || 'ANAMNESIS_VALORACION_TRATAMIENTO';
-    const area = caseData.trainingConfig?.area || 'MSK';
-    const academicLevel = caseData.trainingConfig?.academicLevel || '2';
-
-    const evaluationPrompt = `
-Evalúa el desempeño del alumno en este caso clínico.
-
-DATOS DEL CASO
-- Paciente: ${caseData.patientName}
-- Edad: ${caseData.age}
-- Género: ${caseData.gender}
-- Motivo principal: ${caseData.chiefComplaint}
-- Patología interna del caso: ${caseData.pathology}
-- Stage: ${stage}
-- Área: ${area}
-- Nivel académico: ${academicLevel}º
-
-CONVERSACIÓN DEL ALUMNO
-${studentMessages || 'Sin mensajes del alumno'}
-
-RESPUESTAS DEL PACIENTE
-${patientMessages || 'Sin respuestas del paciente'}
-
-NOTAS DEL ALUMNO
-${notes || 'Sin notas'}
-
-Evalúa anamnesis, exploración, razonamiento clínico, tratamiento y comunicación según el stage del caso.
-`.trim();
-
-    const response = await fetch(CHAT_FUNCTION_URL, {
+    const response = await fetch(`${SERVER_URL}/ai/response`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        mode: 'casos_libres',
-        action: 'evaluar',
-        message: evaluationPrompt,
-        history: [],
-        trainingConfig: caseData.trainingConfig,
-        seed: caseData.id,
+      headers: getAnonHeaders(),
+      body: JSON.stringify({ 
+        message, 
+        caseData, 
+        chatHistory,
+        isExamMode 
       }),
     });
 
-    const data = await parseJsonSafe<ChatEvaluationResponse>(response);
+    if (!response.ok) {
+      throw new Error('Error generating AI response');
+    }
+
+    const data = await response.json();
+    return data.response;
+  } catch (error) {
+    console.error('Error generating AI response:', error);
+    return 'Lo siento, tuve un problema al generar la respuesta. Por favor, intenta de nuevo.';
+  }
+};
+
+// Generar evaluación con IA
+export const generateAIEvaluation = async (
+  caseData: CaseData,
+  chatHistory: Array<{ role: 'student' | 'patient'; message: string }>,
+  notes: string
+): Promise<any | null> => {
+  try {
+    const response = await fetch(`${SERVER_URL}/ai/evaluation`, {
+      method: 'POST',
+      headers: getAnonHeaders(),
+      body: JSON.stringify({ caseData, chatHistory, notes }),
+    });
 
     if (!response.ok) {
-      throw new Error(data?.error || 'Error generating evaluation');
+      throw new Error('Error generating evaluation');
     }
 
-    if (data?.evaluation) {
-      return normalizeChatEvaluationToAppFormat(data.evaluation);
-    }
-
-    return null;
+    const data = await response.json();
+    return data.evaluation;
   } catch (error) {
-    console.error('Error generating AI evaluation:', error);
+    console.error('Error generating evaluation:', error);
     return null;
   }
 };
 
-type ChatHistoryMessage = {
-  role: 'student' | 'patient';
-  message: string;
-};
-
-/**
- * =========================================================
- * Casos de examen
- * =========================================================
- */
-export const generateExamCase = async (): Promise<ExamCaseData> => {
+// Generar caso de examen
+export const generateExamCase = async (): Promise<any> => {
   try {
+    console.log('Generating exam case...');
+    
     const response = await fetch(`${SERVER_URL}/exam/generate`, {
       method: 'POST',
       headers: getAnonHeaders(),
     });
 
     if (!response.ok) {
-      const errorMessage = await parseErrorMessage(
-        response,
-        'Error generating exam case'
-      );
-      throw new Error(errorMessage);
+      const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
+      console.error('Server error generating exam case:', errorData);
+      throw new Error(errorData.error || 'Error generating exam case');
     }
 
-    const data = await parseJsonSafe<{ examCase?: ExamCaseData }>(response);
-
-    if (!data?.examCase) {
-      throw new Error('No se recibió ningún caso de examen');
-    }
-
+    const data = await response.json();
+    console.log(`✓ Exam case generated`);
     return data.examCase;
   } catch (error) {
     console.error('Error generating exam case:', error);
@@ -680,12 +309,10 @@ export const generateExamCase = async (): Promise<ExamCaseData> => {
   }
 };
 
-export const saveCompletedExamCase = async (
-  examCaseData: ExamCaseData
-): Promise<void> => {
+// Guardar caso de examen completado
+export const saveCompletedExamCase = async (examCaseData: any): Promise<void> => {
   try {
     const userId = getUserId();
-
     if (!userId) {
       throw new Error('No user session');
     }
@@ -697,52 +324,49 @@ export const saveCompletedExamCase = async (
     });
 
     if (!response.ok) {
-      const errorMessage = await parseErrorMessage(
-        response,
-        'Error saving exam case'
-      );
-      throw new Error(errorMessage);
+      const error = await response.json();
+      throw new Error(error.error || 'Error saving exam case');
     }
+
+    console.log('Exam case saved successfully');
   } catch (error) {
     console.error('Error saving exam case:', error);
     throw error;
   }
 };
 
-export const getCompletedExamCases = async (): Promise<ExamCaseData[]> => {
+// Obtener casos de examen completados
+export const getCompletedExamCases = async (): Promise<any[]> => {
   try {
     const userId = getUserId();
-
     if (!userId) {
+      console.log('No userId found, skipping fetch');
       return [];
     }
 
+    console.log(`Fetching exam cases for userId: ${userId}`);
+    
     const response = await fetch(`${SERVER_URL}/exam/get?userId=${userId}`, {
       method: 'GET',
       headers: getAnonHeaders(),
     });
 
     if (!response.ok) {
-      const errorMessage = await parseErrorMessage(
-        response,
-        'Error fetching exam cases'
-      );
-      throw new Error(errorMessage);
+      const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
+      console.error('Server error fetching exam cases:', errorData);
+      throw new Error(errorData.error || 'Error fetching exam cases');
     }
 
-    const data = await parseJsonSafe<{ examCases?: ExamCaseData[] }>(response);
-    return data?.examCases || [];
+    const data = await response.json();
+    console.log(`✓ Fetched ${data.examCases?.length || 0} exam cases`);
+    return data.examCases || [];
   } catch (error) {
     console.error('Error fetching exam cases:', error);
     return [];
   }
 };
 
-/**
- * =========================================================
- * Estudio
- * =========================================================
- */
+// Explicar contenido de estudio con IA
 export const explainStudyContent = async (
   content: string,
   question: string,
@@ -756,26 +380,18 @@ export const explainStudyContent = async (
     });
 
     if (!response.ok) {
-      const errorMessage = await parseErrorMessage(
-        response,
-        'Error explaining content'
-      );
-      throw new Error(errorMessage);
+      throw new Error('Error explaining content');
     }
 
-    const data = await parseJsonSafe<{ explanation?: string }>(response);
-    return (
-      safeString(
-        data?.explanation,
-        'Lo siento, tuve un problema al generar la explicación.'
-      )
-    );
+    const data = await response.json();
+    return data.explanation;
   } catch (error) {
     console.error('Error explaining content:', error);
     return 'Lo siento, tuve un problema al generar la explicación. Por favor, intenta de nuevo.';
   }
 };
 
+// Generar quiz de estudio
 export const generateStudyQuiz = async (content: string): Promise<any> => {
   try {
     const response = await fetch(`${SERVER_URL}/study/quiz`, {
@@ -785,26 +401,18 @@ export const generateStudyQuiz = async (content: string): Promise<any> => {
     });
 
     if (!response.ok) {
-      const errorMessage = await parseErrorMessage(
-        response,
-        'Error generating quiz'
-      );
-      throw new Error(errorMessage);
+      throw new Error('Error generating quiz');
     }
 
-    const data = await parseJsonSafe<{ quiz?: any }>(response);
-    return data?.quiz;
+    const data = await response.json();
+    return data.quiz;
   } catch (error) {
     console.error('Error generating quiz:', error);
     throw error;
   }
 };
 
-/**
- * =========================================================
- * Config IA
- * =========================================================
- */
+// Verificar si OpenAI está configurado
 export const checkAIConfiguration = async (): Promise<boolean> => {
   try {
     const response = await fetch(`${SERVER_URL}/ai/check`, {
@@ -812,10 +420,12 @@ export const checkAIConfiguration = async (): Promise<boolean> => {
       headers: getAnonHeaders(),
     });
 
-    if (!response.ok) return false;
+    if (!response.ok) {
+      return false;
+    }
 
-    const data = await parseJsonSafe<{ hasKey?: boolean }>(response);
-    return !!data?.hasKey;
+    const data = await response.json();
+    return data.hasKey || false;
   } catch (error) {
     console.error('Error checking AI configuration:', error);
     return false;

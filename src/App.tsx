@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useState, useEffect } from 'react';
 import { HomeScreen } from './components/HomeScreen';
 import { CaseSimulation } from './components/CaseSimulation';
 import { EvaluationScreen } from './components/EvaluationScreen';
@@ -10,39 +10,30 @@ import { CaseReviewScreen } from './components/CaseReviewScreen';
 import { ExamCaseReviewScreen } from './components/ExamCaseReviewScreen';
 import { FisioStudyScreen } from './components/FisioStudyScreen';
 import { AuthScreen } from './components/AuthScreen';
-import {
-  getCompletedCases,
-  generateNewCase,
-  saveCompletedCase,
-  generateExamCase,
-  checkSession,
+import { DemoMode } from './components/DemoMode';
+import { 
+  getCompletedCases, 
+  generateNewCase, 
+  saveCompletedCase, 
+  generateExamCase, 
+  checkSession, 
   logout,
   saveCompletedExamCase,
-  getCompletedExamCases,
+  getCompletedExamCases
 } from './utils/supabase/client';
 import { toast, Toaster } from 'sonner@2.0.3';
 
-/**
- * =========================================================
- * Tipos principales
- * =========================================================
- */
-export type TrainingStage =
-  | 'ANAMNESIS'
-  | 'ANAMNESIS_VALORACION'
-  | 'ANAMNESIS_VALORACION_TRATAMIENTO';
-
-export type ClinicalArea = 'MSK' | 'NEURO' | 'RESPI';
-
-export type TrainingConfig = {
-  stage: TrainingStage;
-  area?: ClinicalArea;
-  academicLevel?: '1' | '2' | '3' | '4';
-};
-
-export type ChatMessage = {
-  role: 'student' | 'patient';
-  message: string;
+export type CaseData = {
+  id: string;
+  patientName: string;
+  age: number;
+  gender: string;
+  chiefComplaint: string;
+  pathology: string;
+  date: string;
+  evaluation?: EvaluationResult;
+  chatHistory?: Array<{ role: 'student' | 'patient'; message: string }>;
+  notes?: string;
 };
 
 export type EvaluationResult = {
@@ -60,38 +51,7 @@ export type EvaluationResult = {
   };
 };
 
-export type CaseData = {
-  id: string;
-  patientName: string;
-  age: number;
-  gender: string;
-  chiefComplaint: string;
-  pathology: string;
-  date: string;
-  trainingConfig?: TrainingConfig;
-  evaluation?: EvaluationResult;
-  chatHistory?: ChatMessage[];
-  notes?: string;
-};
-
-type Screen =
-  | 'home'
-  | 'simulation-setup'
-  | 'simulation'
-  | 'evaluation'
-  | 'progress'
-  | 'exam-mode'
-  | 'exam-resolution'
-  | 'exam-evaluation'
-  | 'case-review'
-  | 'exam-case-review'
-  | 'fisio-study';
-
-type ExamMessage = {
-  role: 'student' | 'tutor';
-  message: string;
-  isHint?: boolean;
-};
+type Screen = 'home' | 'simulation' | 'evaluation' | 'progress' | 'exam-mode' | 'exam-resolution' | 'exam-evaluation' | 'case-review' | 'exam-case-review' | 'fisio-study' | 'demo';
 
 type ExamCaseData = {
   id: string;
@@ -105,271 +65,53 @@ type ExamCaseData = {
   isCustom: boolean;
   date: string;
   evaluation?: EvaluationResult;
-  messages?: ExamMessage[];
+  messages?: Array<{ role: 'student' | 'tutor'; message: string; isHint?: boolean }>;
   studentAnswer?: string;
 };
 
-/**
- * =========================================================
- * Helpers UI
- * =========================================================
- */
-function labelStage(stage: TrainingStage) {
-  if (stage === 'ANAMNESIS') return 'Solo anamnesis';
-  if (stage === 'ANAMNESIS_VALORACION') return 'Anamnesis + valoración';
-  return 'Anamnesis + valoración + tratamiento';
-}
-
-function labelArea(area?: ClinicalArea) {
-  if (area === 'MSK') return 'Musculoesquelético';
-  if (area === 'NEURO') return 'Neurológico';
-  if (area === 'RESPI') return 'Respiratorio';
-  return 'Cualquiera';
-}
-
-function getInitialPatientMessage(newCase: CaseData) {
-  return `Hola, soy ${newCase.patientName}. ${newCase.chiefComplaint}.`;
-}
-
-/**
- * =========================================================
- * Pantalla de configuración de simulación
- * =========================================================
- */
-function SimulationSetupScreen({
-  onBack,
-  onConfirm,
-}: {
-  onBack: () => void;
-  onConfirm: (cfg: TrainingConfig) => void;
-}) {
-  const [cfg, setCfg] = useState<TrainingConfig>({
-    stage: 'ANAMNESIS',
-    area: 'MSK',
-    academicLevel: '2',
-  });
-
-  return (
-    <div className="min-h-screen bg-[#f5f5f7] flex items-center justify-center p-6">
-      <div className="w-full max-w-3xl glass rounded-3xl p-8 shadow-apple-lg border border-[#d2d2d7]">
-        <div className="space-y-1">
-          <h1 className="text-2xl text-[#1d1d1f] font-semibold">
-            Configurar entrenamiento
-          </h1>
-          <p className="text-[#6e6e73]">
-            Selecciona qué quieres entrenar antes de generar el caso. La
-            simulación se adaptará al nivel elegido.
-          </p>
-        </div>
-
-        <div className="mt-8 space-y-6">
-          <div>
-            <p className="text-[#1d1d1f] font-medium mb-2">
-              Competencia a entrenar
-            </p>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-              {(
-                [
-                  { id: 'ANAMNESIS', label: 'Solo anamnesis' },
-                  {
-                    id: 'ANAMNESIS_VALORACION',
-                    label: 'Anamnesis + valoración',
-                  },
-                  {
-                    id: 'ANAMNESIS_VALORACION_TRATAMIENTO',
-                    label: 'Anamnesis + valoración + tratamiento',
-                  },
-                ] as const
-              ).map((opt) => (
-                <button
-                  key={opt.id}
-                  onClick={() => setCfg((prev) => ({ ...prev, stage: opt.id }))}
-                  className={`rounded-2xl border px-4 py-3 text-left transition ${
-                    cfg.stage === opt.id
-                      ? 'border-[#0071e3] bg-[#0071e3]/10'
-                      : 'border-[#d2d2d7] bg-white hover:bg-gray-50'
-                  }`}
-                >
-                  <div className="text-[#1d1d1f] font-medium">{opt.label}</div>
-                  <div className="text-[#6e6e73] text-sm mt-1">
-                    {opt.id === 'ANAMNESIS'
-                      ? 'Historia clínica, síntomas y red flags.'
-                      : opt.id === 'ANAMNESIS_VALORACION'
-                      ? 'Incluye exploración y hallazgos simples.'
-                      : 'Incluye objetivos y plan. Lo propone el alumno.'}
-                  </div>
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div>
-              <p className="text-[#1d1d1f] font-medium mb-2">Área clínica</p>
-              <div className="flex flex-wrap gap-2">
-                {(['MSK', 'NEURO', 'RESPI'] as const).map((area) => (
-                  <button
-                    key={area}
-                    onClick={() => setCfg((prev) => ({ ...prev, area }))}
-                    className={`rounded-full border px-4 py-2 transition ${
-                      cfg.area === area
-                        ? 'border-[#0071e3] bg-[#0071e3]/10 text-[#0071e3]'
-                        : 'border-[#d2d2d7] bg-white hover:bg-gray-50 text-[#1d1d1f]'
-                    }`}
-                  >
-                    {labelArea(area)}
-                  </button>
-                ))}
-
-                <button
-                  onClick={() =>
-                    setCfg((prev) => ({ ...prev, area: undefined }))
-                  }
-                  className={`rounded-full border px-4 py-2 transition ${
-                    !cfg.area
-                      ? 'border-[#0071e3] bg-[#0071e3]/10 text-[#0071e3]'
-                      : 'border-[#d2d2d7] bg-white hover:bg-gray-50 text-[#1d1d1f]'
-                  }`}
-                >
-                  Cualquiera
-                </button>
-              </div>
-            </div>
-
-            <div>
-              <p className="text-[#1d1d1f] font-medium mb-2">Curso / nivel</p>
-              <div className="flex flex-wrap gap-2">
-                {(['1', '2', '3', '4'] as const).map((level) => (
-                  <button
-                    key={level}
-                    onClick={() =>
-                      setCfg((prev) => ({ ...prev, academicLevel: level }))
-                    }
-                    className={`rounded-full border px-4 py-2 transition ${
-                      cfg.academicLevel === level
-                        ? 'border-[#0071e3] bg-[#0071e3]/10 text-[#0071e3]'
-                        : 'border-[#d2d2d7] bg-white hover:bg-gray-50 text-[#1d1d1f]'
-                    }`}
-                  >
-                    {level}º
-                  </button>
-                ))}
-
-                <button
-                  onClick={() =>
-                    setCfg((prev) => ({ ...prev, academicLevel: undefined }))
-                  }
-                  className={`rounded-full border px-4 py-2 transition ${
-                    !cfg.academicLevel
-                      ? 'border-[#0071e3] bg-[#0071e3]/10 text-[#0071e3]'
-                      : 'border-[#d2d2d7] bg-white hover:bg-gray-50 text-[#1d1d1f]'
-                  }`}
-                >
-                  Cualquiera
-                </button>
-              </div>
-            </div>
-          </div>
-
-          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 pt-2">
-            <div className="text-[#6e6e73]">
-              Selección:{' '}
-              <span className="text-[#1d1d1f] font-medium">
-                {labelStage(cfg.stage)}
-              </span>
-              {' · '}
-              <span className="text-[#1d1d1f] font-medium">
-                {labelArea(cfg.area)}
-              </span>
-              {cfg.academicLevel ? (
-                <>
-                  {' · '}
-                  <span className="text-[#1d1d1f] font-medium">
-                    Nivel {cfg.academicLevel}º
-                  </span>
-                </>
-              ) : null}
-            </div>
-
-            <div className="flex gap-3">
-              <button
-                onClick={onBack}
-                className="bg-white hover:bg-gray-50 border border-[#d2d2d7] rounded-xl h-11 px-5"
-              >
-                Volver
-              </button>
-
-              <button
-                onClick={() => onConfirm(cfg)}
-                className="bg-[#0071e3] hover:bg-[#0077ed] text-white rounded-xl h-11 px-5 shadow-lg"
-              >
-                Generar caso
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-/**
- * =========================================================
- * App principal
- * =========================================================
- */
 export default function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [userName, setUserName] = useState('');
   const [currentScreen, setCurrentScreen] = useState<Screen>('home');
-
+  const [isDemoMode, setIsDemoMode] = useState(false);
   const [currentCase, setCurrentCase] = useState<CaseData | null>(null);
-  const [currentExamCase, setCurrentExamCase] = useState<ExamCaseData | null>(
-    null
-  );
-
+  const [currentExamCase, setCurrentExamCase] = useState<ExamCaseData | null>(null);
   const [reviewCase, setReviewCase] = useState<CaseData | null>(null);
-  const [reviewExamCase, setReviewExamCase] = useState<ExamCaseData | null>(
-    null
-  );
-
-  const [chatHistory, setChatHistory] = useState<ChatMessage[]>([]);
-  const [notes, setNotes] = useState('');
-
-  const [examMessages, setExamMessages] = useState<ExamMessage[]>([]);
+  const [reviewExamCase, setReviewExamCase] = useState<ExamCaseData | null>(null);
+  const [examMessages, setExamMessages] = useState<Array<{ role: 'student' | 'tutor'; message: string; isHint?: boolean }>>([]);
   const [examStudentAnswer, setExamStudentAnswer] = useState('');
-
+  const [chatHistory, setChatHistory] = useState<Array<{ role: 'student' | 'patient'; message: string }>>([]);
+  const [notes, setNotes] = useState('');
   const [completedCases, setCompletedCases] = useState<CaseData[]>([]);
-  const [completedExamCases, setCompletedExamCases] = useState<ExamCaseData[]>(
-    []
-  );
-
+  const [completedExamCases, setCompletedExamCases] = useState<ExamCaseData[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
-  /**
-   * =======================================================
-   * Inicialización
-   * =======================================================
-   */
+  // Verificar sesión al inicio
   useEffect(() => {
     const initializeApp = async () => {
       try {
-        const session = await checkSession();
-
-        if (!session) {
+        // Verificar si viene desde el botón "Probar demo"
+        const urlParams = new URLSearchParams(window.location.search);
+        if (urlParams.get('mode') === 'demo') {
+          setIsDemoMode(true);
+          setIsLoading(false);
           return;
         }
 
-        setIsAuthenticated(true);
-        setUserName(session.userName);
-
-        const [cases, examCases] = await Promise.all([
-          getCompletedCases(),
-          getCompletedExamCases(),
-        ]);
-
-        setCompletedCases(cases);
-        setCompletedExamCases(examCases);
+        const session = await checkSession();
+        
+        if (session) {
+          setIsAuthenticated(true);
+          setUserName(session.userName);
+          
+          // Cargar casos completados del usuario
+          const cases = await getCompletedCases();
+          setCompletedCases(cases);
+          
+          // Cargar casos de examen completados
+          const examCases = await getCompletedExamCases();
+          setCompletedExamCases(examCases);
+        }
       } catch (error) {
         console.error('Error initializing app:', error);
       } finally {
@@ -377,25 +119,20 @@ export default function App() {
       }
     };
 
-    void initializeApp();
+    initializeApp();
   }, []);
 
-  /**
-   * =======================================================
-   * Auth
-   * =======================================================
-   */
-  const handleAuthSuccess = async (_userId: string, name: string) => {
+  const handleAuthSuccess = async (userId: string, name: string) => {
     setIsAuthenticated(true);
     setUserName(name);
-
+    
+    // Cargar casos del usuario
     try {
-      const [cases, examCases] = await Promise.all([
-        getCompletedCases(),
-        getCompletedExamCases(),
-      ]);
-
+      const cases = await getCompletedCases();
       setCompletedCases(cases);
+      
+      // Cargar casos de examen
+      const examCases = await getCompletedExamCases();
       setCompletedExamCases(examCases);
     } catch (error) {
       console.error('Error loading cases after auth:', error);
@@ -403,51 +140,29 @@ export default function App() {
   };
 
   const handleLogout = async () => {
-    try {
-      await logout();
-
-      setIsAuthenticated(false);
-      setUserName('');
-      setCompletedCases([]);
-      setCompletedExamCases([]);
-      setCurrentCase(null);
-      setCurrentExamCase(null);
-      setReviewCase(null);
-      setReviewExamCase(null);
-      setChatHistory([]);
-      setNotes('');
-      setExamMessages([]);
-      setExamStudentAnswer('');
-      setCurrentScreen('home');
-
-      toast.success('Sesión cerrada correctamente');
-    } catch (error) {
-      console.error('Error logging out:', error);
-      toast.error('No se pudo cerrar la sesión');
-    }
+    await logout();
+    setIsAuthenticated(false);
+    setUserName('');
+    setCompletedCases([]);
+    setCompletedExamCases([]);
+    setCurrentScreen('home');
+    toast.success('Sesión cerrada correctamente');
   };
 
-  /**
-   * =======================================================
-   * Casos libres
-   * =======================================================
-   */
-  const startNewCase = async (trainingConfig: TrainingConfig) => {
+  const startNewCase = async () => {
     try {
       setIsLoading(true);
-
-      const newCase = await generateNewCase(trainingConfig);
-
+      const newCase = await generateNewCase();
+      
       setCurrentCase(newCase);
       setChatHistory([
         {
           role: 'patient',
-          message: getInitialPatientMessage(newCase),
+          message: `Hola, soy ${newCase.patientName}. ${newCase.chiefComplaint}.`,
         },
       ]);
       setNotes('');
       setCurrentScreen('simulation');
-
       toast.success('Nuevo caso generado');
     } catch (error) {
       console.error('Error generating case:', error);
@@ -458,55 +173,42 @@ export default function App() {
   };
 
   const endCase = () => {
-    if (!currentCase) {
-      toast.error('No hay caso activo');
-      return;
-    }
-
     setCurrentScreen('evaluation');
   };
 
   const saveEvaluation = async (evaluation: EvaluationResult) => {
-    if (!currentCase) return;
-
-    try {
-      const updatedCase: CaseData = {
-        ...currentCase,
-        evaluation,
-        chatHistory,
-        notes,
-      };
-
-      await saveCompletedCase(updatedCase);
-
-      setCurrentCase(updatedCase);
-      setCompletedCases((prev) => [...prev, updatedCase]);
-
-      toast.success('Caso guardado exitosamente');
-    } catch (error) {
-      console.error('Error saving case:', error);
-      toast.error('Error al guardar el caso');
+    if (currentCase) {
+      try {
+        const updatedCase = { 
+          ...currentCase, 
+          evaluation,
+          chatHistory,
+          notes 
+        };
+        
+        await saveCompletedCase(updatedCase);
+        setCompletedCases([...completedCases, updatedCase]);
+        toast.success('Caso guardado exitosamente');
+      } catch (error) {
+        console.error('Error saving case:', error);
+        toast.error('Error al guardar el caso');
+      }
     }
   };
 
   const repeatCase = () => {
-    if (!currentCase) return;
-
-    setChatHistory([
-      {
-        role: 'patient',
-        message: getInitialPatientMessage(currentCase),
-      },
-    ]);
-    setNotes('');
-    setCurrentScreen('simulation');
+    if (currentCase) {
+      setChatHistory([
+        {
+          role: 'patient',
+          message: `Hola, soy ${currentCase.patientName}. ${currentCase.chiefComplaint}.`,
+        },
+      ]);
+      setNotes('');
+      setCurrentScreen('simulation');
+    }
   };
 
-  /**
-   * =======================================================
-   * Modo examen
-   * =======================================================
-   */
   const startExamMode = () => {
     setCurrentScreen('exam-mode');
   };
@@ -518,6 +220,7 @@ export default function App() {
       let examCase: ExamCaseData;
 
       if (isCustom) {
+        // Caso personalizado del profesor
         examCase = {
           id: Date.now().toString(),
           caseStatement: customCaseText,
@@ -525,6 +228,7 @@ export default function App() {
           date: new Date().toLocaleDateString('es-ES'),
         };
       } else {
+        // Generar caso con IA
         examCase = await generateExamCase();
       }
 
@@ -540,40 +244,33 @@ export default function App() {
     }
   };
 
-  const finishExamCase = (messages: ExamMessage[], studentAnswer: string) => {
+  const finishExamCase = (messages: any[], studentAnswer: string) => {
     setExamMessages(messages);
     setExamStudentAnswer(studentAnswer);
     setCurrentScreen('exam-evaluation');
   };
 
   const saveExamEvaluation = async (evaluation: EvaluationResult) => {
-    if (!currentExamCase) return;
-
-    try {
-      const completedExamCase: ExamCaseData = {
-        ...currentExamCase,
-        evaluation,
-        messages: examMessages,
-        studentAnswer: examStudentAnswer,
-      };
-
-      await saveCompletedExamCase(completedExamCase);
-
-      setCurrentExamCase(completedExamCase);
-      setCompletedExamCases((prev) => [...prev, completedExamCase]);
-
-      toast.success('Caso de examen guardado exitosamente');
-    } catch (error) {
-      console.error('Error saving exam case:', error);
-      toast.error('Error al guardar el caso de examen');
+    if (currentExamCase) {
+      try {
+        const completedExamCase = {
+          ...currentExamCase,
+          evaluation,
+          messages: examMessages,
+          studentAnswer: examStudentAnswer,
+        };
+        
+        await saveCompletedExamCase(completedExamCase);
+        setCompletedExamCases([...completedExamCases, completedExamCase]);
+        toast.success('Caso de examen guardado exitosamente');
+      } catch (error) {
+        console.error('Error saving exam case:', error);
+        toast.error('Error al guardar el caso de examen');
+      }
     }
   };
 
-  /**
-   * =======================================================
-   * Loading
-   * =======================================================
-   */
+  // Mostrar loader inicial
   if (isLoading) {
     return (
       <div className="min-h-screen bg-[#f5f5f7] flex items-center justify-center">
@@ -587,11 +284,22 @@ export default function App() {
     );
   }
 
-  /**
-   * =======================================================
-   * Auth guard
-   * =======================================================
-   */
+  // Mostrar modo demo si fue activado
+  if (isDemoMode) {
+    return (
+      <>
+        <DemoMode 
+          onExit={() => {
+            setIsDemoMode(false);
+            window.history.replaceState({}, '', window.location.pathname);
+          }} 
+        />
+        <Toaster position="top-center" />
+      </>
+    );
+  }
+
+  // Mostrar pantalla de autenticación si no está autenticado
   if (!isAuthenticated) {
     return (
       <>
@@ -601,16 +309,11 @@ export default function App() {
     );
   }
 
-  /**
-   * =======================================================
-   * Render principal
-   * =======================================================
-   */
   return (
     <div className="min-h-screen bg-[#f5f5f7]">
       {currentScreen === 'home' && (
         <HomeScreen
-          onStartNewCase={() => setCurrentScreen('simulation-setup')}
+          onStartNewCase={startNewCase}
           onStartExamMode={startExamMode}
           onViewProgress={() => setCurrentScreen('progress')}
           onStartFisioStudy={() => setCurrentScreen('fisio-study')}
@@ -618,60 +321,6 @@ export default function App() {
           completedCasesCount={completedCases.length}
           userName={userName}
           isLoading={isLoading}
-        />
-      )}
-
-      {currentScreen === 'simulation-setup' && (
-        <SimulationSetupScreen
-          onBack={() => setCurrentScreen('home')}
-          onConfirm={startNewCase}
-        />
-      )}
-
-      {currentScreen === 'simulation' && currentCase && (
-        <CaseSimulation
-          caseData={currentCase}
-          chatHistory={chatHistory}
-          onChatUpdate={setChatHistory}
-          notes={notes}
-          onNotesUpdate={setNotes}
-          onEndCase={endCase}
-          onBackToHome={() => setCurrentScreen('home')}
-        />
-      )}
-
-      {currentScreen === 'evaluation' && currentCase && (
-        <EvaluationScreen
-          caseData={currentCase}
-          chatHistory={chatHistory}
-          notes={notes}
-          onSaveEvaluation={saveEvaluation}
-          onRepeatCase={repeatCase}
-          onNewCase={() => setCurrentScreen('simulation-setup')}
-          onViewProgress={() => setCurrentScreen('progress')}
-        />
-      )}
-
-      {currentScreen === 'progress' && (
-        <ProgressScreen
-          completedCases={completedCases}
-          completedExamCases={completedExamCases}
-          onBackToHome={() => setCurrentScreen('home')}
-          onReviewCase={(caseData) => {
-            setReviewCase(caseData);
-            setCurrentScreen('case-review');
-          }}
-          onReviewExamCase={(examCaseData) => {
-            setReviewExamCase(examCaseData);
-            setCurrentScreen('exam-case-review');
-          }}
-        />
-      )}
-
-      {currentScreen === 'case-review' && reviewCase && (
-        <CaseReviewScreen
-          caseData={reviewCase}
-          onBack={() => setCurrentScreen('progress')}
         />
       )}
 
@@ -701,6 +350,53 @@ export default function App() {
         />
       )}
 
+      {currentScreen === 'simulation' && currentCase && (
+        <CaseSimulation
+          caseData={currentCase}
+          chatHistory={chatHistory}
+          onChatUpdate={setChatHistory}
+          notes={notes}
+          onNotesUpdate={setNotes}
+          onEndCase={endCase}
+          onBackToHome={() => setCurrentScreen('home')}
+        />
+      )}
+
+      {currentScreen === 'evaluation' && currentCase && (
+        <EvaluationScreen
+          caseData={currentCase}
+          chatHistory={chatHistory}
+          notes={notes}
+          onSaveEvaluation={saveEvaluation}
+          onRepeatCase={repeatCase}
+          onNewCase={startNewCase}
+          onViewProgress={() => setCurrentScreen('progress')}
+        />
+      )}
+
+      {currentScreen === 'progress' && (
+        <ProgressScreen
+          completedCases={completedCases}
+          completedExamCases={completedExamCases}
+          onBackToHome={() => setCurrentScreen('home')}
+          onReviewCase={(caseData) => {
+            setReviewCase(caseData);
+            setCurrentScreen('case-review');
+          }}
+          onReviewExamCase={(examCaseData) => {
+            setReviewExamCase(examCaseData);
+            setCurrentScreen('exam-case-review');
+          }}
+        />
+      )}
+
+      {currentScreen === 'case-review' && reviewCase && (
+        <CaseReviewScreen
+          caseData={reviewCase}
+          onBack={() => setCurrentScreen('progress')}
+        />
+      )}
+
       {currentScreen === 'exam-case-review' && reviewExamCase && (
         <ExamCaseReviewScreen
           examCaseData={reviewExamCase}
@@ -709,9 +405,11 @@ export default function App() {
       )}
 
       {currentScreen === 'fisio-study' && (
-        <FisioStudyScreen onBackToHome={() => setCurrentScreen('home')} />
+        <FisioStudyScreen
+          onBackToHome={() => setCurrentScreen('home')}
+        />
       )}
-
+      
       <Toaster position="top-right" richColors />
     </div>
   );
