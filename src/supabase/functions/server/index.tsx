@@ -32,6 +32,24 @@ async function authenticatedStudent(c: any) {
   return error ? null : data.user;
 }
 
+// Require a real student session before invoking paid AI endpoints.
+// This also applies to study and exam features, not only free simulation.
+const protectedAIPrefixes = [
+  "/make-server-eba6a2ba/ai/response",
+  "/make-server-eba6a2ba/ai/evaluation",
+  "/make-server-eba6a2ba/exam/generate",
+  "/make-server-eba6a2ba/exam/evaluation",
+  "/make-server-eba6a2ba/study/explain",
+  "/make-server-eba6a2ba/study/quiz",
+];
+app.use("*", async (c, next) => {
+  if (protectedAIPrefixes.includes(c.req.path)) {
+    const student = await authenticatedStudent(c);
+    if (!student) return c.json({ error: "Unauthorized" }, 401);
+  }
+  await next();
+});
+
 // Health check endpoint
 app.get("/make-server-eba6a2ba/health", (c) => {
   return c.json({ status: "ok" });
