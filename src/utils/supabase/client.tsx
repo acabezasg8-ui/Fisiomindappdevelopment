@@ -238,7 +238,7 @@ export const generateAIResponse = async (
   try {
     const response = await fetch(`${SERVER_URL}/ai/response`, {
       method: 'POST',
-      headers: getAnonHeaders(),
+      headers: getAuthHeaders(),
       body: JSON.stringify({ 
         message, 
         caseData, 
@@ -268,7 +268,7 @@ export const generateAIEvaluation = async (
   try {
     const response = await fetch(`${SERVER_URL}/ai/evaluation`, {
       method: 'POST',
-      headers: getAnonHeaders(),
+      headers: getAuthHeaders(),
       body: JSON.stringify({ caseData, chatHistory, notes }),
     });
 
@@ -291,7 +291,7 @@ export const generateExamCase = async (): Promise<any> => {
     
     const response = await fetch(`${SERVER_URL}/exam/generate`, {
       method: 'POST',
-      headers: getAnonHeaders(),
+      headers: getAuthHeaders(),
     });
 
     if (!response.ok) {
@@ -375,7 +375,7 @@ export const explainStudyContent = async (
   try {
     const response = await fetch(`${SERVER_URL}/study/explain`, {
       method: 'POST',
-      headers: getAnonHeaders(),
+      headers: getAuthHeaders(),
       body: JSON.stringify({ content, question, chatHistory }),
     });
 
@@ -396,7 +396,7 @@ export const generateStudyQuiz = async (content: string): Promise<any> => {
   try {
     const response = await fetch(`${SERVER_URL}/study/quiz`, {
       method: 'POST',
-      headers: getAnonHeaders(),
+      headers: getAuthHeaders(),
       body: JSON.stringify({ content }),
     });
 
