@@ -156,8 +156,8 @@ export const saveCompletedCase = async (caseData: CaseData): Promise<void> => {
 
     const response = await fetch(`${SERVER_URL}/cases/save`, {
       method: 'POST',
-      headers: getAnonHeaders(),
-      body: JSON.stringify({ userId, caseData }),
+      headers: getAuthHeaders(),
+      body: JSON.stringify({ caseData }),
     });
 
     if (!response.ok) {
@@ -183,9 +183,9 @@ export const getCompletedCases = async (): Promise<CaseData[]> => {
 
     console.log(`Fetching cases for userId: ${userId}`);
     
-    const response = await fetch(`${SERVER_URL}/cases/get?userId=${userId}`, {
+    const response = await fetch(`${SERVER_URL}/cases/get`, {
       method: 'GET',
-      headers: getAnonHeaders(),
+      headers: getAuthHeaders(),
     });
 
     if (!response.ok) {
@@ -319,8 +319,8 @@ export const saveCompletedExamCase = async (examCaseData: any): Promise<void> =>
 
     const response = await fetch(`${SERVER_URL}/exam/save`, {
       method: 'POST',
-      headers: getAnonHeaders(),
-      body: JSON.stringify({ userId, examCaseData }),
+      headers: getAuthHeaders(),
+      body: JSON.stringify({ examCaseData }),
     });
 
     if (!response.ok) {
@@ -346,9 +346,9 @@ export const getCompletedExamCases = async (): Promise<any[]> => {
 
     console.log(`Fetching exam cases for userId: ${userId}`);
     
-    const response = await fetch(`${SERVER_URL}/exam/get?userId=${userId}`, {
+    const response = await fetch(`${SERVER_URL}/exam/get`, {
       method: 'GET',
-      headers: getAnonHeaders(),
+      headers: getAuthHeaders(),
     });
 
     if (!response.ok) {
