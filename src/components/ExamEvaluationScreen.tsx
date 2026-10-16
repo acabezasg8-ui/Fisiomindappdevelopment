@@ -85,7 +85,7 @@ export function ExamEvaluationScreen({
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            'Authorization': `Bearer ${(await import('../utils/supabase/info.tsx')).publicAnonKey}`,
+            'Authorization': `Bearer ${localStorage.getItem('fisiomind_access_token') || ''}`,
           },
           body: JSON.stringify({
             examCase,
