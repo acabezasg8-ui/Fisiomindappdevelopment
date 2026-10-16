@@ -20,6 +20,18 @@ app.use(
   }),
 );
 
+
+// Authenticate the student with Supabase Auth; never trust client-supplied userId.
+async function authenticatedStudent(c: any) {
+  const authorization = c.req.header("Authorization") || "";
+  const token = authorization.startsWith("Bearer ") ? authorization.slice(7).trim() : "";
+  if (!token) return null;
+  const { createClient } = await import("jsr:@supabase/supabase-js@2");
+  const supabase = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_ANON_KEY")!);
+  const { data, error } = await supabase.auth.getUser(token);
+  return error ? null : data.user;
+}
+
 // Health check endpoint
 app.get("/make-server-eba6a2ba/health", (c) => {
   return c.json({ status: "ok" });
@@ -171,7 +183,10 @@ app.post("/make-server-eba6a2ba/auth/signup", async (c) => {
 // Guardar un caso completado
 app.post("/make-server-eba6a2ba/cases/save", async (c) => {
   try {
-    const { userId, caseData } = await c.req.json();
+    const { caseData } = await c.req.json();
+    const student = await authenticatedStudent(c);
+    if (!student) return c.json({ error: "Unauthorized" }, 401);
+    const userId = student.id;
     
     if (!userId || !caseData) {
       return c.json({ error: "Missing userId or caseData" }, 400);
@@ -198,7 +213,9 @@ app.post("/make-server-eba6a2ba/cases/save", async (c) => {
 // Obtener casos completados
 app.get("/make-server-eba6a2ba/cases/get", async (c) => {
   try {
-    const userId = c.req.query("userId");
+    const student = await authenticatedStudent(c);
+    if (!student) return c.json({ error: "Unauthorized" }, 401);
+    const userId = student.id;
     
     console.log(`Fetching cases for user: ${userId}`);
     
@@ -1198,7 +1215,10 @@ function generateLocalExamEvaluation(studentMessages: any[], studentAnswer: stri
 // Guardar caso de examen completado
 app.post("/make-server-eba6a2ba/exam/save", async (c) => {
   try {
-    const { userId, examCaseData } = await c.req.json();
+    const { examCaseData } = await c.req.json();
+    const student = await authenticatedStudent(c);
+    if (!student) return c.json({ error: "Unauthorized" }, 401);
+    const userId = student.id;
     
     if (!userId || !examCaseData) {
       return c.json({ error: "Missing userId or examCaseData" }, 400);
@@ -1225,7 +1245,9 @@ app.post("/make-server-eba6a2ba/exam/save", async (c) => {
 // Obtener casos de examen completados
 app.get("/make-server-eba6a2ba/exam/get", async (c) => {
   try {
-    const userId = c.req.query("userId");
+    const student = await authenticatedStudent(c);
+    if (!student) return c.json({ error: "Unauthorized" }, 401);
+    const userId = student.id;
     
     console.log(`Fetching exam cases for user: ${userId}`);
     
