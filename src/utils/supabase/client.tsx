@@ -210,7 +210,7 @@ export const generateNewCase = async (): Promise<CaseData> => {
     
     const response = await fetch(`${SERVER_URL}/cases/generate`, {
       method: 'POST',
-      headers: getAnonHeaders(),
+     headers: getAuthHeaders(),
     });
 
     if (!response.ok) {
